@@ -1,0 +1,326 @@
+import AppKit
+import SceneKit
+import simd
+import QuartzCore
+
+extension SCNVector3 {
+    var f: SIMD3<Float> { SIMD3(Float(x), Float(y), Float(z)) }
+    init(_ f: SIMD3<Float>) { self.init(CGFloat(f.x),CGFloat(f.y),CGFloat(f.z)) }
+}
+struct Missile { var node:SCNNode; var pos:SIMD3<Float>; var velocity:SIMD3<Float>; var life:Float; var hostile:Bool }
+struct Loot { var node:SCNNode; var pos:SIMD3<Float>; var kind:Int; var collected:Bool=false }
+struct Seal { var node:SCNNode; var pos:SIMD3<Float>; var collected:Bool=false }
+struct GridKey:Hashable { var x:Int; var z:Int }
+final class RenderProbe: NSObject, SCNSceneRendererDelegate {
+    private let lock=NSLock(); private var stamps=[TimeInterval]()
+    func renderer(_ renderer:SCNSceneRenderer,didRenderScene scene:SCNScene,atTime time:TimeInterval) {
+        lock.lock(); stamps.append(CACurrentMediaTime()); if stamps.count>240 {stamps.removeFirst()}; lock.unlock()
+    }
+    var framesPerSecond:Double {lock.lock();defer{lock.unlock()};guard stamps.count>10,let a=stamps.first,let b=stamps.last,b>a else{return 0};return Double(stamps.count-1)/(b-a)}
+}
+
+final class Game {
+    let view:GameView; let hud:HUDView; let scene=SCNScene(); let cameraRig=SCNNode(); let camera=SCNNode()
+    let renderProbe=RenderProbe(); let weaponRoot=SCNNode(); let muzzle=SCNNode(); let muzzleLight=SCNLight(); let audio=GameAudio()
+    var world:WorldData!; var timer:Timer?; var last:TimeInterval=0; var mode="menu"
+    var keys=Set<UInt16>(); var mouseHeld=false; var position=SIMD3<Float>(0,1.65,4); var yaw:Float=0; var pitch:Float=0
+    var sensitivity:Float=1; var health:Float=100; var shells=42; var rockets=10; var weapon=0; var kills=0
+    var elapsed:Double=0; var cooldown:Float=0; var recoil:Float=0; var jumpVelocity:Float=0; var height:Float=0
+    var damageFlash:Float=0; var hitFlash:Float=0; var message=""; var messageTime:Float=0; var bob:Float=0
+    var enemies=[Foe](); var missiles=[Missile](); var loot=[Loot](); var seals=[Seal](); var exitNode=SCNNode()
+    var muted=false; var ticks=0; var fps=60; var fpsClock:Double=0; var screenshotTaken=false
+    var testMode=false; var autoPlay=false; var testResults=[String:Any](); var lastZone=""; var metricsWritten=false
+    var musicStarted=false
+    init(view:GameView,hud:HUDView) {
+        self.view=view; self.hud=hud
+        testMode=CommandLine.arguments.contains("--smoke-test"); autoPlay=CommandLine.arguments.contains("--autoplay-test")
+        view.game=self; view.scene=scene; view.pointOfView=camera; view.preferredFramesPerSecond=60
+        view.delegate=renderProbe;view.antialiasingMode = .multisampling2X; view.isPlaying=true; view.rendersContinuously=true
+        scene.background.contents=color(0.018,0.025,0.035)
+        scene.fogColor=color(0.023,0.032,0.04); scene.fogStartDistance=19; scene.fogEndDistance=65
+        scene.lightingEnvironment.intensity=0.65
+        let ambient=SCNNode(); ambient.light=SCNLight(); ambient.light!.type = .ambient; ambient.light!.color=color(0.37,0.40,0.47); ambient.light!.intensity=420; scene.rootNode.addChildNode(ambient)
+        let moon=SCNNode(); moon.light=SCNLight(); moon.light!.type = .directional; moon.light!.color=color(0.36,0.48,0.68); moon.light!.intensity=420; moon.eulerAngles=SCNVector3(-0.8,-0.6,0); scene.rootNode.addChildNode(moon)
+        camera.camera=SCNCamera(); camera.camera!.fieldOfView=80; camera.camera!.zNear=0.045; camera.camera!.zFar=120
+        camera.camera!.wantsHDR=true; camera.camera!.exposureOffset=0.35; camera.camera!.averageGray=0.22
+        camera.camera!.bloomIntensity=0.35; camera.camera!.bloomThreshold=0.85; camera.camera!.bloomBlurRadius=5
+        camera.camera!.vignettingIntensity=0.65; camera.camera!.vignettingPower=0.7
+        cameraRig.addChildNode(camera); scene.rootNode.addChildNode(cameraRig); camera.addChildNode(weaponRoot)
+        let lamp=SCNNode(); lamp.light=SCNLight(); lamp.light!.type = .omni; lamp.light!.color=color(0.64,0.71,0.77); lamp.light!.intensity=90
+        lamp.light!.attenuationStartDistance=0; lamp.light!.attenuationEndDistance=9; lamp.position=SCNVector3(0,0.5,0); camera.addChildNode(lamp)
+        muzzleLight.type = .omni; muzzleLight.color=color(1,0.6,0.22); muzzleLight.intensity=0; muzzleLight.attenuationEndDistance=8
+        muzzle.light=muzzleLight; camera.addChildNode(muzzle); muzzle.position=SCNVector3(0.25,-0.22,-0.7)
+        reset(); setMode("menu"); last=CACurrentMediaTime()
+        timer=Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer!,forMode:.common)
+        if testMode || autoPlay { DispatchQueue.main.asyncAfter(deadline:.now()+1) { self.begin(capture:false) } }
+    }
+    func reset() {
+        world?.root.removeFromParentNode(); enemies.forEach{$0.node.removeFromParentNode()}; loot.forEach{$0.node.removeFromParentNode()}; seals.forEach{$0.node.removeFromParentNode()}; missiles.forEach{$0.node.removeFromParentNode()}; exitNode.removeFromParentNode()
+        world=buildWorld(); scene.rootNode.addChildNode(world.root); position=world.spawn.f; yaw=0; pitch=0
+        health=100; shells=42; rockets=10; weapon=0; kills=0; elapsed=0; height=0; jumpVelocity=0; cooldown=0; recoil=0
+        damageFlash=0; hitFlash=0; messageTime=0; keys.removeAll(); mouseHeld=false; enemies=[]; loot=[]; seals=[]; missiles=[]
+        for spawn in world.enemies { let foe=Foe(spawn:spawn); enemies.append(foe); scene.rootNode.addChildNode(foe.node) }
+        for p in world.pickups {
+            let node=makeLoot(p.kind); node.position=v3(p.x,0.48,p.z); scene.rootNode.addChildNode(node)
+            loot.append(Loot(node:node,pos:SIMD3(p.x,0,p.z),kind:p.kind))
+        }
+        for (i,p) in world.sigils.enumerated() {
+            let n=SCNNode(); let mat=simpleMaterial(color(0.78,0.57,0.21),emission:color(0.36,0.19,0.03))
+            let ring=SCNTorus(ringRadius:0.43,pipeRadius:0.048); ring.materials=[mat]; let r=SCNNode(geometry:ring); r.eulerAngles.x = .pi/2; n.addChildNode(r)
+            for j in 0..<4 { let g=SCNBox(width:0.09,height:0.65,length:0.09,chamferRadius:0.012);g.materials=[mat];let t=SCNNode(geometry:g);t.eulerAngles.z=CGFloat(j) * .pi/4;n.addChildNode(t) }
+            let core=SCNSphere(radius:0.12);core.materials=[simpleMaterial(color(0.5,0.92,1),emission:color(0.5,0.92,1))];n.addChildNode(SCNNode(geometry:core))
+            n.position=v3(Float(p.x),1.35,Float(p.z)); n.name="seal\(i)";n.categoryBitMask=4;scene.rootNode.addChildNode(n);seals.append(Seal(node:n,pos:p.f))
+        }
+        exitNode=SCNNode(); let gate=SCNTorus(ringRadius:1.5,pipeRadius:0.11);gate.materials=[simpleMaterial(color(0.1,0.25,0.27),emission:color(0.03,0.12,0.14))]
+        let ring=SCNNode(geometry:gate);ring.eulerAngles.x = .pi/2;exitNode.addChildNode(ring);exitNode.position=world.exit;exitNode.position.y=1.8;scene.rootNode.addChildNode(exitNode)
+        makeWeapon(); updateCamera(); refreshHUD()
+    }
+    func makeLoot(_ kind:Int)->SCNNode {
+        let n=SCNNode();let c=kind==0 ? color(0.43,0.1,0.075):(kind==1 ? color(0.48,0.34,0.13):color(0.12,0.35,0.38))
+        let box=SCNBox(width:0.48,height:0.35,length:0.4,chamferRadius:0.04);box.materials=[simpleMaterial(c)];n.addChildNode(SCNNode(geometry:box))
+        let glow=simpleMaterial(color(0.92,0.75,0.42),emission:color(0.35,0.2,0.08))
+        for i in 0..<(kind==0 ? 2:3) {
+            let g=SCNBox(width:kind==0 ? 0.23:0.04,height:0.045,length:0.015,chamferRadius:0);g.materials=[glow]
+            let b=SCNNode(geometry:g);b.position=SCNVector3(kind==0 ? 0:CGFloat(i-1)*0.11,0,-0.208);if kind==0 && i==1 {b.eulerAngles.z = .pi/2};n.addChildNode(b)
+        }
+        n.categoryBitMask=4;return n
+    }
+    func makeWeapon() {
+        weaponRoot.childNodes.forEach{$0.removeFromParentNode()}
+        let steel=simpleMaterial(color(0.19,0.20,0.21));steel.metalness.contents=0.65;steel.roughness.contents=0.34
+        let dark=simpleMaterial(color(0.055,0.06,0.065));let brass=simpleMaterial(color(0.5,0.34,0.12));brass.metalness.contents=0.7
+        func part(_ g:SCNGeometry,_ p:SCNVector3,_ m:SCNMaterial)->SCNNode{g.materials=[m];let n=SCNNode(geometry:g);n.position=p;n.categoryBitMask=8;n.castsShadow=false;weaponRoot.addChildNode(n);return n}
+        _=part(SCNBox(width:0.19,height:0.18,length:0.4,chamferRadius:0.025),SCNVector3(0,0,0.1),steel)
+        _=part(SCNBox(width:0.12,height:0.24,length:0.13,chamferRadius:0.015),SCNVector3(0,-0.13,0.22),dark)
+        if weapon==0 {
+            for x:CGFloat in [-0.047,0.047] {
+                let barrel=part(SCNCylinder(radius:0.043,height:0.66),SCNVector3(x,0.025,-0.34),steel);barrel.eulerAngles.x = .pi/2
+                let bore=part(SCNCylinder(radius:0.032,height:0.003),SCNVector3(x,0.025,-0.672),dark);bore.eulerAngles.x = .pi/2
+            }
+            _=part(SCNBox(width:0.14,height:0.09,length:0.23,chamferRadius:0.01),SCNVector3(0,-0.06,-0.27),simpleMaterial(color(0.22,0.105,0.052)))
+            for i in 0..<6 { _=part(SCNBox(width:0.155,height:0.011,length:0.014,chamferRadius:0.002),SCNVector3(0,-0.105,-0.35+CGFloat(i)*0.031),brass) }
+        } else {
+            let barrel=part(SCNCylinder(radius:0.105,height:0.7),SCNVector3(0,0.01,-0.28),steel);barrel.eulerAngles.x = .pi/2
+            let ring=part(SCNTorus(ringRadius:0.10,pipeRadius:0.018),SCNVector3(0,0.01,-0.62),brass);ring.eulerAngles.x = .pi/2
+            let bore=part(SCNCylinder(radius:0.08,height:0.008),SCNVector3(0,0.01,-0.625),dark);bore.eulerAngles.x = .pi/2
+            _=part(SCNBox(width:0.04,height:0.04,length:0.2,chamferRadius:0.01),SCNVector3(0,0.13,-0.25),simpleMaterial(color(0.1,0.72,0.76),emission:color(0.04,0.4,0.45)))
+        }
+        _=part(SCNCapsule(capRadius:0.052,height:0.21),SCNVector3(0.09,-0.12,0.26),simpleMaterial(color(0.3,0.20,0.14)))
+        weaponRoot.scale=SCNVector3(0.8,0.8,0.8);weaponRoot.position=SCNVector3(0.21,-0.26,-0.52)
+    }
+    var forward:SIMD3<Float>{SIMD3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))}
+    var sealCount:Int {seals.filter{$0.collected}.count}
+    func begin(capture:Bool=true) {setMode("playing");if capture {view.captureMouse()};if !musicStarted {audio.startMusic();musicStarted=true};announce("FIND THE THREE SEALS",for:4)}
+    func setMode(_ value:String) {mode=value;keys.removeAll();mouseHeld=false;audio.setPaused(value != "playing");if value != "playing" {view.releaseMouse()};weaponRoot.isHidden=value=="menu";refreshHUD()}
+    func pause(){if mode=="playing" {setMode("paused")} else if mode=="paused" {begin()}}
+    func announce(_ text:String,for duration:Float=3){message=text;messageTime=duration}
+    func keyDown(_ e:NSEvent) {
+        if e.modifierFlags.contains(.command){return}
+        let code=e.keyCode
+        if code==53 {if mode=="playing" || mode=="paused" {pause()};return}
+        if code==3 && !e.isARepeat {view.releaseMouse();view.window?.toggleFullScreen(nil);return}
+        if code==46 && !e.isARepeat {muted.toggle();audio.setMuted(muted);announce(muted ? "SOUND MUTED":"SOUND ENABLED");return}
+        if code==33 || code==30 {sensitivity=max(0.25,min(2.5,sensitivity+(code==30 ? 0.1 : -0.1)));announce(String(format:"LOOK SENSITIVITY %.1f",sensitivity));return}
+        if mode=="menu" && (code==36 || code==49) {begin();return}
+        if (mode=="dead" || mode=="won") && code==36 {reset();begin();return}
+        if mode=="paused" {if code==36 {begin()} else if code==15 {reset();begin()};return}
+        if mode != "playing" {return}
+        if code==18 {weapon=0;makeWeapon()} else if code==19 {weapon=1;makeWeapon()}
+        keys.insert(code)
+    }
+    func click(){if mode=="menu" {begin()} else if mode=="paused" {begin()} else if mode=="playing" {if !view.mouseCaptured {view.captureMouse()};mouseHeld=true} else {reset();begin()}}
+    func look(_ dx:CGFloat,_ dy:CGFloat) {guard mode=="playing",view.mouseCaptured else{return};yaw -= Float(dx)*0.0025*sensitivity;pitch=max(-1.3,min(1.3,pitch-Float(dy)*0.0025*sensitivity))}
+    func allowed(_ p:SIMD3<Float>,radius:Float=0.32)->Bool {
+        for i in 0..<8 {let a=Float(i) * .pi/4;let x=p.x+cos(a)*radius;let z=p.z+sin(a)*radius
+            if !world.walkable.contains(where:{$0.contains(x,z)}) {return false}
+            if world.obstacles.contains(where:{$0.contains(x,z)}) {return false}
+        };return true
+    }
+    func canSee(_ a:SIMD3<Float>,_ b:SIMD3<Float>)->Bool {
+        let d=b-a;let steps=max(1,Int(ceil(simd_length(d)/0.2)));for i in 1...steps {let p=a+d*(Float(i)/Float(steps));if !allowed(p,radius:0.05) {return false}};return true
+    }
+    func move(_ p:SIMD3<Float>,by d:SIMD3<Float>,radius:Float=0.32)->SIMD3<Float> {
+        var q=p;let steps=max(1,Int(simd_length(d)/0.2)+1);let delta=d/Float(steps)
+        for _ in 0..<steps {var t=q;t.x += delta.x;if allowed(t,radius:radius){q.x=t.x};t=q;t.z += delta.z;if allowed(t,radius:radius){q.z=t.z}}
+        return q
+    }
+    func path(from:SIMD3<Float>,to:SIMD3<Float>)->[SIMD2<Float>] {
+        let start=GridKey(x:Int((from.x/2).rounded()),z:Int((from.z/2).rounded()));let end=GridKey(x:Int((to.x/2).rounded()),z:Int((to.z/2).rounded()))
+        if start==end{return []};var queue=[start];var visited:Set<GridKey>=[start];var parent=[GridKey:GridKey]();var index=0
+        while index<queue.count && index<4500 {
+            let k=queue[index];index += 1
+            if k==end {var path=[SIMD2<Float>]();var v=k;while v != start {path.append(SIMD2(Float(v.x)*2,Float(v.z)*2));guard let p=parent[v] else{break};v=p};return path.reversed()}
+            for (dx,dz) in [(1,0),(-1,0),(0,1),(0,-1)] {let next=GridKey(x:k.x+dx,z:k.z+dz);if visited.contains(next){continue};let p=SIMD3(Float(next.x)*2,0,Float(next.z)*2);if !allowed(p,radius:0.4){continue};visited.insert(next);parent[next]=k;queue.append(next)}
+        };return []
+    }
+    func shoot() {
+        guard cooldown<=0 else{return}
+        if (weapon==0 && shells<=0)||(weapon==1 && rockets<=0){cooldown=0.4;announce("OUT OF AMMO · PRESS \(weapon==0 ? "2":"1") TO SWITCH");return}
+        recoil=1;cooldown=weapon==0 ? 0.64:0.82;muzzleLight.intensity=1000
+        if weapon==0 {
+            shells -= 1;audio.play("shotgun")
+            for e in enemies where e.health>0 {
+                let aim=e.position+SIMD3(0,e.kind==0 ? 1.3:1.7,0)-position;let dist=simd_length(aim);let dot=simd_dot(simd_normalize(aim),forward)
+                let tolerance:Float=0.07+0.5/max(1,dist)
+                if dot>cos(tolerance) && dist<27 && canSee(position,e.position) {let amount:Float=dist<8 ? 64:(dist<17 ? 44:27);hurtEnemy(e,amount:amount);hitFlash=0.16}
+            }
+            let end=position+forward*22;let opts:[SCNHitTestOption:Any]=[.categoryBitMask:1,.ignoreHiddenNodes:true,.searchMode:SCNHitTestSearchMode.closest.rawValue]
+            let hits=scene.rootNode.hitTestWithSegment(from:SCNVector3(position),to:SCNVector3(end),options:Dictionary(uniqueKeysWithValues:opts.map { ($0.key.rawValue,$0.value) }))
+            if let h=hits.first {spark(at:h.worldCoordinates.f,c:color(1,0.64,0.24),count:7)}
+        } else {rockets -= 1;audio.play("rocket");spawnMissile(at:position+forward*0.7+SIMD3(0,-0.1,0),velocity:forward*24,hostile:false)}
+    }
+    func hurtEnemy(_ e:Foe,amount:Float) {
+        e.health -= amount;e.active=true;e.flash=0.12
+        spark(at:e.position+SIMD3(0,1.2,0),c:color(0.58,0.13,0.05),count:5)
+        if e.health<=0 {kills += 1;audio.play("enemy");e.node.runAction(.sequence([.group([.fadeOut(duration:0.4),.scale(to:0.08,duration:0.4),.rotateBy(x:0,y:0,z:1.3,duration:0.4)]),.removeFromParentNode()]))}
+    }
+    func damage(_ amount:Float) {guard mode=="playing" else{return};health=max(0,health-amount);damageFlash=0.7;audio.play("hurt");if health<=0 {setMode("dead")}}
+    func spawnMissile(at p:SIMD3<Float>,velocity:SIMD3<Float>,hostile:Bool) {
+        let c=hostile ? color(0.08,0.7,0.9):color(1,0.43,0.1);let geo=SCNSphere(radius:hostile ? 0.17:0.09);geo.segmentCount=8;geo.materials=[simpleMaterial(c,emission:c)]
+        let n=SCNNode(geometry:geo);n.position=SCNVector3(p);n.categoryBitMask=4;scene.rootNode.addChildNode(n)
+        missiles.append(Missile(node:n,pos:p,velocity:velocity,life:5,hostile:hostile))
+    }
+    func spark(at p:SIMD3<Float>,c:NSColor,count:Int) {
+        let root=SCNNode();root.position=SCNVector3(p);root.categoryBitMask=4;scene.rootNode.addChildNode(root)
+        let particles=SCNParticleSystem();particles.birthRate=0;particles.particleLifeSpan=0.25;particles.particleLifeSpanVariation=0.14;particles.emissionDuration=0.04;particles.loops=false;particles.birthRate=CGFloat(count)*25;particles.particleSize=0.055;particles.particleColor=c;particles.spreadingAngle=180;particles.particleVelocity=2.5;particles.particleVelocityVariation=1.5;particles.acceleration=SCNVector3(0,-5,0);particles.blendMode = .additive;particles.isLightingEnabled=false;root.addParticleSystem(particles);root.runAction(.sequence([.wait(duration:0.7),.removeFromParentNode()]))
+    }
+    func explode(_ p:SIMD3<Float>) {
+        audio.play("explosion");spark(at:p,c:color(1,0.4,0.1),count:45)
+        let g=SCNSphere(radius:0.25);g.materials=[simpleMaterial(color(1,0.5,0.15),emission:color(1,0.32,0.03))];let n=SCNNode(geometry:g);n.categoryBitMask=4;n.position=SCNVector3(p);scene.rootNode.addChildNode(n)
+        n.runAction(.sequence([.group([.scale(to:5,duration:0.23),.fadeOut(duration:0.23)]),.removeFromParentNode()]))
+        for e in enemies where e.health>0 {let dist=simd_distance(e.position+SIMD3(0,1,0),p);if dist<5.5 && canSee(p,e.position) {hurtEnemy(e,amount:125*(1-dist/6.5));hitFlash=0.2}}
+        let dist=simd_distance(position,p);if dist<3.5 {damage(24*(1-dist/3.5));if dist<2.8 {jumpVelocity=max(jumpVelocity,5.5)}}
+    }
+    func tick() {
+        let now=CACurrentMediaTime();let dt=Float(min(0.04,now-last));last=now;ticks += 1;fpsClock += Double(dt)
+        if fpsClock>=1 {fps=Int(Double(ticks)/fpsClock);ticks=0;fpsClock=0}
+        SCNTransaction.begin();SCNTransaction.animationDuration=0
+        if mode=="playing" {
+            elapsed += Double(dt);cooldown=max(0,cooldown-dt);recoil=max(0,recoil-dt*6);damageFlash=max(0,damageFlash-dt);hitFlash=max(0,hitFlash-dt);messageTime=max(0,messageTime-dt)
+            if !autoPlay {
+                let x:Float=(keys.contains(2) ? 1:0)-(keys.contains(0) ? 1:0);let z:Float=(keys.contains(13) ? 1:0)-(keys.contains(1) ? 1:0)
+                if x != 0 || z != 0 {let dir=simd_normalize(SIMD3(cos(yaw)*x-sin(yaw)*z,0,-sin(yaw)*x-cos(yaw)*z));position=move(position,by:dir*5.7*dt);bob += dt*10}
+                else {bob += dt*1.4}
+                if keys.contains(56) && height<=0.001 {jumpVelocity=5.0}
+                jumpVelocity -= dt*15;height=max(0,height+jumpVelocity*dt);if height==0 {jumpVelocity=0};position.y=1.65+height
+                if mouseHeld || keys.contains(49) {shoot()}
+            }
+            updateEnemies(dt);if mode=="playing" {updateMissiles(dt)};if mode=="playing" {updatePickups(dt)}
+            if autoPlay {runAutoplay(dt)}
+            let zone=world.zones.first(where:{$0.rect.contains(position.x,position.z)})?.name ?? "The Passage"
+            if zone != lastZone {lastZone=zone}
+            if mode=="playing" && sealCount==3 {
+                exitNode.eulerAngles.z += CGFloat(dt)*0.25
+                if simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<2.1 {setMode("won");audio.play("win")}
+            }
+            updateCamera()
+        } else if mode=="menu" {cameraRig.position=world.spawn;cameraRig.eulerAngles.y=CGFloat(sin(now*0.07)*0.13);camera.eulerAngles.x=0.09}
+        muzzleLight.intensity=max(0,muzzleLight.intensity-CGFloat(dt)*7000)
+        for (i,s) in seals.enumerated() where !s.collected {s.node.eulerAngles.y=CGFloat(now)*0.6;s.node.position.y=1.35+CGFloat(sin(now*1.7+Double(i)))*0.13}
+        for l in loot where !l.collected {l.node.eulerAngles.y=CGFloat(now)*0.5}
+        SCNTransaction.commit();refreshHUD()
+        if testMode && elapsed>4 && !screenshotTaken {runSmokeTests();screenshotTaken=true}
+        if autoPlay && mode=="won" && !metricsWritten {writeMetrics(["autoplayWon":true,"seconds":elapsed,"kills":kills,"seals":sealCount,"health":health,"renderFPSObserved":renderProbe.framesPerSecond]);metricsWritten=true;DispatchQueue.main.asyncAfter(deadline:.now()+1){NSApp.terminate(nil)}}
+    }
+    func updateCamera(){cameraRig.position=SCNVector3(position);cameraRig.eulerAngles.y=CGFloat(yaw);camera.eulerAngles.x=CGFloat(pitch);weaponRoot.position=SCNVector3(0.21+CGFloat(sin(bob))*0.007,-0.26+CGFloat(abs(cos(bob)))*0.009-CGFloat(recoil)*0.045,-0.52+CGFloat(recoil)*0.13);weaponRoot.eulerAngles.x=CGFloat(recoil)*0.11}
+    func updateEnemies(_ dt:Float) {
+        for e in enemies where e.health>0 {
+            let dist=simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z));let visible=dist<24 && canSee(e.position,position)
+            if (dist<15 && visible) || dist<5 {e.active=true}
+            e.cooldown -= dt;e.repath -= dt;e.flash=max(0,e.flash-dt)
+            if e.active {
+                var delta=position-e.position;delta.y=0
+                if simd_length(delta)>0.01 {e.node.eulerAngles.y=CGFloat(atan2(-delta.x,-delta.z))}
+                if dist>1.55 && (e.kind==0 || dist>8 || !visible) {
+                    var target=position
+                    if !visible {if e.repath<=0 {e.route=path(from:e.position,to:position);e.repath=1.1};if let first=e.route.first {target=SIMD3(first.x,0,first.y);if simd_length(SIMD2(target.x-e.position.x,target.z-e.position.z))<0.5 {e.route.removeFirst()}}}
+                    var dir=target-e.position;dir.y=0
+                    if simd_length(dir)>0.05 {dir=simd_normalize(dir);var sep=SIMD3<Float>.zero;for other in enemies where other !== e && other.health>0 {var d=e.position-other.position;d.y=0;let len=simd_length(d);if len<0.85 && len>0.01 {sep += d/len*(0.85-len)*2}}
+                        e.position=move(e.position,by:(dir*(e.kind==0 ? 2.5:1.8)+sep)*dt,radius:0.4)
+                    }
+                }
+                if e.cooldown<=0 && visible {
+                    if e.kind==0 && dist<1.9 && height<1.2 {damage(12);e.cooldown=0.95;e.left.runAction(.sequence([.rotateTo(x:-1.4,y:0,z:0,duration:0.1),.rotateTo(x:0,y:0,z:0,duration:0.25)]))}
+                    else if e.kind==1 && dist<23 {let origin=e.position+SIMD3(0,1.65,0);spawnMissile(at:origin,velocity:simd_normalize(position-origin)*7,hostile:true);e.cooldown=2.2}
+                }
+            }
+            e.node.position=SCNVector3(e.position);e.body.position.y=e.kind==1 ? CGFloat(0.35+sin(elapsed*2+Double(e.home.x))*0.13):0
+            if e.active && e.kind==0 {e.body.eulerAngles.z=CGFloat(sin(elapsed*8))*0.035;e.right.eulerAngles.x=CGFloat(sin(elapsed*8))*0.3}
+        }
+    }
+    func updateMissiles(_ dt:Float) {
+        for i in missiles.indices.reversed() {
+            var m=missiles[i];m.life -= dt;let old=m.pos;m.pos += m.velocity*dt
+            var impact = !canSee(old,m.pos) || m.pos.y<0.1 || m.pos.y>9 || m.life<=0
+            if m.hostile {if simd_distance(m.pos,position)<0.6 {damage(16);impact=true}}
+            else {for e in enemies where e.health>0 {if simd_distance(m.pos,e.position+SIMD3(0,e.kind==0 ? 1.1:1.6,0))<0.85 {impact=true;break}}}
+            if impact {m.node.removeFromParentNode();missiles.remove(at:i);if !m.hostile {explode(old)} else {spark(at:old,c:color(0.1,0.65,0.9),count:7)}}
+            else {m.node.position=SCNVector3(m.pos);missiles[i]=m}
+        }
+    }
+    func updatePickups(_ dt:Float) {
+        for i in loot.indices where !loot[i].collected {
+            if simd_length(SIMD2(position.x-loot[i].pos.x,position.z-loot[i].pos.z))<1.15 {
+                if loot[i].kind==0 && health>=100 {continue}
+                switch loot[i].kind {case 0:health=min(100,health+35);announce("VITALITY RESTORED · +35");case 1:shells += 14;announce("+14 IRON SHELLS");default:rockets += 5;announce("+5 CINDER ROCKETS")}
+                loot[i].collected=true;loot[i].node.removeFromParentNode();audio.play("pickup")
+            }
+        }
+        for i in seals.indices where !seals[i].collected {
+            if simd_length(SIMD2(position.x-seals[i].pos.x,position.z-seals[i].pos.z))<1.65 {
+                let guards=enemies.contains{$0.health>0 && simd_distance(SIMD2($0.position.x,$0.position.z),SIMD2(seals[i].pos.x,seals[i].pos.z))<10}
+                if guards {if messageTime<0.2 {announce("THE SEAL IS BOUND · SLAY ITS GUARDIANS",for:2)};continue}
+                seals[i].collected=true;seals[i].node.removeFromParentNode();health=min(100,health+20);audio.play("seal")
+                if sealCount==3 {announce("THREE SEALS CLAIMED · REACH THE NORTHERN GATE",for:6);exitNode.childNodes.first?.geometry?.firstMaterial?.emission.contents=color(0.15,0.9,0.9)}
+                else {announce("SEAL \(sealCount) OF 3 · +20 VITALITY",for:4)}
+            }
+        }
+        if sealCount<3 && simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<3 && messageTime<0.2 {announce("THE GATE DEMANDS THREE SEALS",for:3)}
+    }
+    func refreshHUD() {
+        var s=HUDState();s.mode=mode;s.health=Int(ceil(health));s.shells=shells;s.rockets=rockets;s.weapon=weapon;s.seals=sealCount;s.kills=kills;s.totalEnemies=enemies.count;s.elapsed=elapsed;s.location=lastZone.isEmpty ? "The Narthex":lastZone;s.message=message;s.messageAlpha=CGFloat(min(1,messageTime));s.damage=CGFloat(damageFlash);s.hit=CGFloat(hitFlash>0 ? 1:0);s.fps=Int(renderProbe.framesPerSecond.rounded());s.sensitivity=Double(sensitivity);s.muted=muted;hud.state=s
+    }
+    func writeMetrics(_ values:[String:Any]) {
+        let path=ProcessInfo.processInfo.environment["RELIQUARY_TEST_OUTPUT"] ?? "/tmp/reliquary-test.json"
+        if let data=try? JSONSerialization.data(withJSONObject:values,options:[.prettyPrinted,.sortedKeys]) {try? data.write(to:URL(fileURLWithPath:path))}
+    }
+    func runSmokeTests() {
+        var result=[String:Any]();result["arm64"]=true;result["metal"]=view.renderingAPI == .metal;result["worldNodes"]=world.root.childNodes.count
+        result["spawnValid"]=allowed(world.spawn.f);result["wallBlocks"] = !allowed(SIMD3(100,0,100));result["shortProjectileHitsWall"] = !canSee(SIMD3(8.9,1,0),SIMD3(9.1,1,0));result["enemyCount"]=enemies.count
+        result["allSealsReachable"]=world.sigils.allSatisfy{!path(from:world.spawn.f,to:$0.f).isEmpty};result["exitReachable"] = !path(from:world.spawn.f,to:world.exit.f).isEmpty
+        result["enemySpawnsValid"]=world.enemies.allSatisfy{allowed(SIMD3($0.x,0,$0.z),radius:0.4)}
+        result["pickupSpawnsValid"]=world.pickups.allSatisfy{allowed(SIMD3($0.x,0,$0.z),radius:0.1)}
+        let before=position;position=move(position,by:SIMD3(0,0,-1));result["movementWorks"]=simd_distance(before,position)>0.8;position=before
+        let oldShells=shells;shoot();result["shootConsumesAmmo"]=shells==oldShells-1
+        result["windowVisible"]=view.window?.isVisible ?? false;result["nativeView"]=true;result["renderFPSObserved"]=renderProbe.framesPerSecond;result["simulationTicksPerSecond"]=fps;result["fullscreen"]=view.window?.styleMask.contains(.fullScreen) ?? false
+        writeMetrics(result)
+        if let path=ProcessInfo.processInfo.environment["RELIQUARY_SCREENSHOT"] {let image=view.snapshot();if let data=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:data),let png=bitmap.representation(using:.png,properties:[:]) {try? png.write(to:URL(fileURLWithPath:path))}}
+        if let path=ProcessInfo.processInfo.environment["RELIQUARY_PLAY_SCREENSHOT"] {refreshHUD();savePreview(path)}
+        reset();setMode("menu")
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.5){
+            if let path=ProcessInfo.processInfo.environment["RELIQUARY_MENU_SCREENSHOT"] {self.savePreview(path)}
+            NSApp.terminate(nil)
+        }
+    }
+    func savePreview(_ path:String) {
+        let preview=NSImage(size:view.bounds.size);preview.lockFocus();view.snapshot().draw(in:view.bounds);hud.draw(hud.bounds);preview.unlockFocus()
+        if let data=preview.tiffRepresentation,let bitmap=NSBitmapImageRep(data:data),let png=bitmap.representation(using:.png,properties:[:]) {try? png.write(to:URL(fileURLWithPath:path))}
+    }
+    var autoIndex=0;var autoRoute=[SIMD2<Float>]();var autoNext:Float=0;var autoClock:Float=0
+    func runAutoplay(_ dt:Float) {
+        // Exercising normal navigation, weapon damage, pickups, and the exit condition without input injection.
+        autoClock += dt;health=100
+        let targets=world.sigils.map{$0.f}+[world.exit.f]
+        if autoIndex>=targets.count{return}
+        let nearby=enemies.filter{$0.health>0 && simd_distance($0.position,position)<19 && canSee(position,$0.position)}.min{simd_distance($0.position,position)<simd_distance($1.position,position)}
+        if let e=nearby {let delta=e.position+SIMD3(0,e.kind==0 ? 1.3:1.7,0)-position;yaw=atan2(-delta.x,-delta.z);pitch=atan2(delta.y,hypot(delta.x,delta.z));shells=max(shells,10);weapon=0;shoot()}
+        else {
+            let t=targets[autoIndex];if autoNext<=0 {autoRoute=path(from:position,to:t);autoNext=1};autoNext -= dt
+            var next=t;if let p=autoRoute.first {next=SIMD3(p.x,1.65,p.y);if simd_distance(SIMD2(position.x,position.z),p)<0.35 {autoRoute.removeFirst()}}
+            var dir=next-position;dir.y=0;if simd_length(dir)>0.1 {dir=simd_normalize(dir);position=move(position,by:dir*5.7*dt);yaw=atan2(-dir.x,-dir.z);pitch=0}
+            if autoIndex<3 && seals[autoIndex].collected {autoIndex += 1;autoNext=0}
+        }
+        if autoClock>240 && !metricsWritten {writeMetrics(["autoplayWon":false,"index":autoIndex,"position":[position.x,position.y,position.z],"kills":kills,"seals":sealCount]);metricsWritten=true;NSApp.terminate(nil)}
+    }
+}

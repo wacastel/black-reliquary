@@ -1,0 +1,19 @@
+# Generated app bundles and release archives
+*.app/
+*.zip
+
+# Local build, editor, and macOS files
+.build/
+DerivedData/
+.DS_Store
+._*
+*.swp
+*.log
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.pem
