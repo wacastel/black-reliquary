@@ -1,32 +1,31 @@
-# Prototype validation — v0.3.0 Bloodfire
+# Prototype validation — v0.4.0 The Winding Cathedral
 
-Test host: Apple M5, macOS 26.6.2. Rebuilt with Swift 6.3.3 as an ARM64 Mach-O executable targeting macOS 14 or newer. The locally signed app verifies after release ZIP extraction.
+Test host: Apple M5, macOS 26.6.2. Built with Swift 6.3.3 for Apple Silicon, targeting macOS 14 or newer. The release ZIP was extracted, its local ad-hoc signature verified, and the extracted app launched successfully. `Tests/extracted-release-smoke.json` records the successful windowed native smoke run.
 
-## Completed checks
+## Native integration
 
-`Tests/bloodfire-enhancements.json` records the fullscreen integration run. All 53 boolean checks passed. Values were checked separately: 26 enemies, four leapers, three Bloodfire relics, a 30-second powerup, 32 fragments per burst, and a measured 5× shotgun damage multiplier.
+`Tests/vertical-enhancements.json` records the final fullscreen run. All 60 top-level boolean checks passed, including all nested vertical check groups. Existing controls, 30-second Bloodfire, fivefold damage, bursts, leapers, audio resources, and gate progression continue to pass.
 
-- Native visible AppKit window, Metal rendering, and native fullscreen.
-- Valid player, enemy, and pickup positions; all seals and the exit reachable.
-- Player movement, wall collision, short projectile wall sweeps, ammunition consumption, and shot cooldowns.
-- Space jumps without firing, ignores typematic repeat events while held, and jumps again on a new press. Shift runs without jumping; releasing it restores walking. Diagonal running is normalized and running respects walls. The measured run/walk speed ratio is 1.54386.
-- Actual mouse-down/up handlers fire and stop firing. A complete down/up tap before the next simulation tick still fires. Right-click triggers neither jumping nor firing. Focus release and pause clear held controls and queued jumps.
-- Bloodfire pickup through normal collision, fivefold damage, weapon switching, pause behavior, expiry, and restart cleanup.
-- Powered shotgun kills produce 32 larger fragments. Fragments move ballistically and expire. Ten rapid bursts remain bounded to 192 fragments and eight burst containers. Powered rockets retain their upgrade after the player's timer expires, and outer-edge splash bursts the leaper.
-- Leapers leave the ground, travel toward the player, land, and remain in navigable space. Wall-adjacent leaps use the same clearance as ground movement. Enemy animation changes the articulated pose and emits a glow.
-- The gate starts locked, remains locked with two seals, and activates its light, portal surface, and spark emitter only after the third seal. Unlocking happens once. The unlocked gate wins; the locked gate cannot win.
-- All requested sounds, including `player_jump`, are bundled. `Tests/audio-v0.3.json` records five refreshed WAVs with valid PCM encoding, no clipped samples, silent endpoints, and deterministic regeneration. All 18 audio assets reproduce byte-for-byte from the generator. The new gun reports have substantial low-mid energy; gore lasts 2.8 seconds, the seal chime 5.6 seconds, and the jump grunt 0.68 seconds. These signal checks do not establish perceived realism or a manual speaker audition.
+- Player movement physically traversed both three-flight staircases in both directions. Feet reached the west ossuary at −6 m and east gallery at +6 m, with each frame changing height by at most approximately 0.032 m at walking speed.
+- Ground, stair, and gallery layers remain distinct at overlapping horizontal coordinates. The player can walk under the gallery, jump and land on top, and fall onto the upper slab. An upward headroom probe stops beneath the slab.
+- Enemies follow the actual stair routes to targets above and below. All 26 enemy spawns, pickups, seals, and the exit are valid and reachable.
+- Shotgun hits and rockets damage visible enemies higher on stairs. Gallery slabs block shots, splash, hostile missiles, and rising debris.
+- Close-range regressions verify that a rocket muzzle cannot spawn beyond a low overhead landing, and a hostile shot stopped by that landing cannot also damage the player on its impact frame.
+- Seals and pickups require the player to be on the corresponding floor. The gate still requires all three seals, lights and sparkles once, and triggers victory only at the exit elevation.
+- Space remains one jump per press, Shift runs, and mouse/trackpad click fires. Focus release and pause clear held input. Normal movement speed is 5.7 m/s, running 8.8 m/s.
 
-`Tests/assisted-playthrough.json` records a complete playthrough using normal movement, combat, pickups, and objectives with assisted health, ammunition, and exact aiming. It defeated all 26 enemies, collected all three seals, and reached victory. This validates the game loop; it does not measure human playtime or difficulty.
+`Tests/assisted-playthrough.json` records a complete run through the normal movement, navigation, combat, pickup, and victory logic. It defeated all 26 enemies, collected three seals, and won in 84.74 simulated seconds. Assistance provides health, ammunition, and exact aiming; this is not a human difficulty or playtime measurement.
 
-## Visual and performance checks
+## Architecture and performance
 
-Native render snapshots of the revised control labels, larger powered burst, and crossing were inspected. The title screen and gameplay images in the repository reflect this version. The gate and gothic environment retain the prior validated layout.
+Original 1024px diffuse/normal/roughness maps are cached for worn sandstone, flagstone, iron, carved trim, and gothic ceiling panels. Reference screenshots of original Quake's Gloom Keep and Grisly Grotto were visually inspected; source links are in README. No Quake textures or other game assets are included.
 
-The fullscreen smoke run sampled approximately 60 rendered FPS. The populated crossing also sampled 59.95 FPS with all 26 enemies alive in a separate four-second assisted-health scenario, recorded in `Tests/bloodfire-performance.json`. FPS comes from SceneKit render callbacks, separately from the simulation timer. Dynamic enemy aura lights are limited to the four nearest living enemies within 12 meters; emissive markings remain visible on other enemies. Debris is capped at 192 pieces and expires; at most eight finite burst containers exist at once.
+The world contains 23 floor/ramp surfaces and 741 finite collision volumes. Vault peaks include the 14 m nave, 18 m crossing, and 16 m northern crypt. The two side wings add ±6 m elevations and walkable space below the upper gallery. Layered navigation uses spatial indexing and cached routes; initial stair routes are prepared during loading.
 
-These are short checks, not sustained thermal or worst-case performance benchmarks.
+Six actual native render snapshots in `Architecture/` were inspected: nave, crossing vault, ascending staircase, upper gallery, gallery underpass, and sunken crypt. This inspection prompted refined pillar tiling and tapered brazier flames. The revised brown palette, worn surfaces, ceiling relief, and vertical separation are visible in the snapshots.
 
-## Human playtest still needed
+`Tests/architecture-performance.json` records approximately 60 FPS in each of those six scenes after a one-second settling period. The complete assisted playthrough sampled 60.06 FPS. These are short observations on this host, not sustained thermal or worst-case benchmarks for every MacBook Air. Initial loading and shader preparation are excluded from the scene samples.
 
-Trackpad feel, audio mix and perceived intensity, readability on your preferred display brightness, revised enemy difficulty, and powerup pacing. The automated playthrough uses assistance and cannot establish combat balance. Native game checks do not replace a manual playthrough with the actual keyboard and trackpad.
+## Human playtesting
+
+The remaining human checks are stair readability, exploration flow, aim and trackpad feel, combat balance, perceived audio intensity, and sustained performance at the user's chosen display settings. The game works offline; no browser or engine installation is required to play.

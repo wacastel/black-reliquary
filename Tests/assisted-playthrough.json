@@ -1,8 +1,8 @@
 {
-  "autoplayWon": true,
-  "health": 100,
-  "kills": 26,
-  "renderFPSObserved": 60.0347272010047,
-  "seals": 3,
-  "seconds": 84.75200345739722
+  "autoplayWon" : true,
+  "health" : 100,
+  "kills" : 26,
+  "renderFPSObserved" : 60.059965100608522,
+  "seals" : 3,
+  "seconds" : 84.738864976912737
 }

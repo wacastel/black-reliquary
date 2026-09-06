@@ -5,10 +5,10 @@ import simd
 final class Foe {
     let node:SCNNode; let kind:Int; let home:SIMD3<Float>
     var position:SIMD3<Float>; var health:Float; var cooldown:Float=1
-    var active=false; var route=[SIMD2<Float>](); var repath:Float=0; var flash:Float=0
+    var active=false; var route=[SIMD3<Float>](); var repath:Float=0; var flash:Float=0
     var leapCooldown:Float=2; var leapRemaining:Float=0
     var leapDirection=SIMD3<Float>.zero; var leapHeight:Float=0
-    var attackAnimation:Float=0
+    var attackAnimation:Float=0; var fallVelocity:Float=0
     let body:SCNNode; let left:SCNNode; let right:SCNNode
     let auraLight=SCNLight()
     private let head=SCNNode(), jaw=SCNNode(), soul=SCNMaterial()
@@ -17,7 +17,7 @@ final class Foe {
     private let phase:Float
 
     init(spawn:EnemySpawn) {
-        kind=spawn.kind; position=SIMD3(spawn.x,0,spawn.z); home=position
+        kind=spawn.kind; position=SIMD3(spawn.x,spawn.y,spawn.z); home=position
         health=kind==0 ? 105:(kind==1 ? 85:125); phase=spawn.x*1.7+spawn.z*0.43
         node=SCNNode(); body=SCNNode(); left=SCNNode(); right=SCNNode()
         let iron=simpleMaterial(color(0.075,0.072,0.067)), edge=simpleMaterial(color(0.21,0.19,0.15))

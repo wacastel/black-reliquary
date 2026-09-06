@@ -1,0 +1,26 @@
+[
+  {
+    "renderFPS" : 60.665578717063873,
+    "scene" : "Nave"
+  },
+  {
+    "renderFPS" : 60.480102701549086,
+    "scene" : "Crossing-vault"
+  },
+  {
+    "renderFPS" : 60.816462122284399,
+    "scene" : "Winding-staircase"
+  },
+  {
+    "renderFPS" : 60.529072844986061,
+    "scene" : "Upper-gallery"
+  },
+  {
+    "renderFPS" : 60.474086602029367,
+    "scene" : "Below-gallery"
+  },
+  {
+    "renderFPS" : 60.577744007470109,
+    "scene" : "Sunken-crypt"
+  }
+]

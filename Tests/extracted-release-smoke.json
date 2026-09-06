@@ -1,0 +1,20 @@
+{
+  "allSealsReachable" : true,
+  "arm64" : true,
+  "enemyCount" : 26,
+  "enemySpawnsValid" : true,
+  "exitReachable" : true,
+  "fullscreen" : false,
+  "metal" : true,
+  "movementWorks" : true,
+  "nativeView" : true,
+  "pickupSpawnsValid" : true,
+  "renderFPSObserved" : 60.026859508130457,
+  "shootConsumesAmmo" : true,
+  "shortProjectileHitsWall" : true,
+  "simulationTicksPerSecond" : 60,
+  "spawnValid" : true,
+  "wallBlocks" : true,
+  "windowVisible" : true,
+  "worldNodes" : 32
+}

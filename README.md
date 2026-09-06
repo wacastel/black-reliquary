@@ -2,9 +2,9 @@
 
 **Chapter 01 — The Hollow Cathedral**
 
-**Current version: v0.3.0.**
+**Current version: v0.4.0.**
 
-An original gothic first-person shooter prototype for Apple Silicon Macs. Fight through a weathered cathedral with dark stone, rust, and ominous light: recover three seals, defeat their guardians, and escape through the northern gate. The compact level is designed for roughly five minutes of first-time play.
+An original gothic first-person shooter prototype for Apple Silicon Macs. Fight through a weathered cathedral with dark stone, rust, and ominous light: recover three seals, defeat their guardians, and escape through the northern gate. The cathedral now spans three elevations, with winding staircases and galleries overlooking lower rooms.
 
 ## Play
 
@@ -39,11 +39,20 @@ The app uses a local ad-hoc signature and has not been notarized for public dist
 
 ## Your objective
 
-Follow the central aisle to the crossing. The west ossuary, east furnace chapel, and northern crypt each hold a floating gold seal. Defeat nearby guardians before collecting a seal. Once all three are yours, the northern exit shines bright emerald and showers sparks: continue through the crypt to escape.
+Follow the central aisle to the crossing. Descend the winding west staircase into the sunken ossuary, climb the east staircase to its upper gallery, and explore the northern crypt. Each holds a floating gold seal. Defeat nearby guardians before collecting a seal. Once all three are yours, the northern exit shines bright emerald and showers sparks: continue through the crypt to escape.
 
 Red reliquaries restore vitality; ammunition boxes replenish shells or rockets. Each seal restores some vitality. The level has 26 enemies, two weapons, health and ammunition pickups, a death/restart loop, and a victory screen.
 
-## Bloodfire and combat refinements — v0.3.0
+## The Winding Cathedral — v0.4.0
+
+- Muted umber, taupe, soot, and old sandstone replace the brighter environment palette. Original 1024px material maps add chipped mortar, granular wear, stains, and cracks, with normal maps for surface relief.
+- Carved ceiling coffers, rosettes, trefoil ornament, and structural vault ribs make the taller rooms more detailed overhead. Ceiling heights vary across the cathedral.
+- Two broad staircases turn around large landings. The west wing descends six meters into the ossuary; the east wing rises six meters to a gallery overlooking a playable lower floor. Seals, enemies, and supplies occupy their actual elevations.
+- Player movement, jumps, enemy routes, projectiles, debris, pickups, and the exit respect the different floor heights. Move normally with WASD to climb stairs; Space remains jump and Shift remains run.
+
+Visual references: screenshots of original Quake's [Gloom Keep](https://www.stdin.co.uk/blog2/2020/08/up-verticality-in-slipgate-chokepoint/) and [The Grisly Grotto](https://www.almarsguides.com/computer/games/Quake/Walkthrough/Episode1/Mission4/) informed the brown masonry, dark recesses, heavy stone bands, and layered routes. All game materials and architecture are original procedural work.
+
+## Bloodfire and combat refinements
 
 - **Revised movement controls:** Space jumps once per press, holding Shift while moving runs, and primary click fires. Jumps have an original, breathy player “huh!” sound.
 - **Darker gothic atmosphere:** weathered masonry, grime, rust, and darker lighting deepen the cathedral's mood.
@@ -82,14 +91,18 @@ If Command Line Tools are missing, run `xcode-select --install` and finish Apple
 - `Source/Game.swift`: movement, collision, weapons, enemies, pickups, objectives, and test scenarios.
 - `Source/Entities.swift`: enemy models and enemy state.
 - `Source/Effects.swift`: Bloodfire relics, weapon effects, and blood, bone, and armor fragments.
-- `Source/World.swift`: cathedral geometry, textures, spawn placement, and navigation boundaries.
+- `Source/World.swift`: cathedral geometry, stairs, floor surfaces, and spawn placement.
+- `Source/Materials.swift`: cached original stone, ceiling, trim, and iron texture maps.
+- `Source/Navigation.swift`: layered routes, slopes, finite collision volumes, and 3D sightlines.
 - `Source/HUD.swift`: native menus and heads-up display.
 - `Source/Audio.swift`: native audio playback.
 - `Source/Core.swift`: shared map data types.
-- `Source/Validation.swift`: enhancement integration checks and showcase captures.
+- `Source/Validation.swift`: control and combat enhancement checks.
+- `Source/VerticalValidation.swift`: stair traversal, headroom, combat, and collection checks across floors.
+- `Source/ArchitecturePreview.swift`: opt-in native architecture snapshots.
 - `Resources`: original soundtrack, effects, and app icon.
 
-This is a single-player prototype with one level and primitive-based creature models. Playtime varies with exploration and combat; five minutes is the design target, not a countdown. Human playtesting is still needed to tune trackpad feel and difficulty.
+This is a single-player prototype with one level and primitive-based creature models. Playtime varies with exploration and combat. Human playtesting is still needed to tune trackpad feel and difficulty.
 
 ## Verification
 
@@ -111,6 +124,6 @@ RELIQUARY_TEST_OUTPUT=/tmp/reliquary-enhancements.json \
 
 Smoke checks validate Metal, visible native window, movement, ammunition consumption, wall collision, valid spawns, and paths to all objectives. Fullscreen mode additionally checks the native window style. The automated playthrough uses assisted health and ammunition to check the combat/objective/ending sequence; it is not a difficulty benchmark. Render FPS is sampled from SceneKit render callbacks, separately from the simulation timer.
 
-The optional enhancement checks in `Source/Validation.swift` exercise actual gameplay paths: Bloodfire collection, fivefold damage, weapon switching, pause and expiry behavior, shot cooldowns, powered rocket persistence and edge damage, fragment motion, leaper movement and wall clearance, enemy animation, gate unlocking and victory, reset cleanup, and bundled sounds. The report also records relic and leaper counts. These integration checks do not replace playtesting combat feel or difficulty.
+The optional enhancement checks in `Source/Validation.swift` exercise actual gameplay paths: Bloodfire collection, fivefold damage, weapon switching, pause and expiry behavior, shot cooldowns, powered rocket persistence and edge damage, fragment motion, leaper movement and wall clearance, enemy animation, gate unlocking and victory, reset cleanup, and bundled sounds. The report also records relic and leaper counts. `Source/VerticalValidation.swift` adds both staircases in both directions, upper-floor jumps and falls, enemy routes, overhead collision, close-range projectile regressions, and floor-specific pickups. These integration checks do not replace playtesting combat feel or difficulty.
 
 `Tools/generate_audio.py` can regenerate the original WAV assets; it requires Python 3 and NumPy. Regeneration is optional and is not part of building or playing the app. See `VALIDATION.md` for the completed checks and their limits.

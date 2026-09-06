@@ -1,0 +1,269 @@
+{
+  "allEnhancementSoundsBundled" : true,
+  "allSealsReachable" : true,
+  "arm64" : true,
+  "bloodfireCollectedThroughGameplay" : true,
+  "bloodfireDamageMultiplier" : 5,
+  "bloodfireDurationSeconds" : 30,
+  "bloodfireLastsThirtySeconds" : true,
+  "bloodfirePickupCount" : 3,
+  "collectionRequiresCorrectFloor" : true,
+  "combatRespectsVerticalArchitecture" : true,
+  "debrisExpiresAfterLargeExplosions" : true,
+  "diagonalRunSpeedNormalized" : true,
+  "enemiesTraverseStairsAcrossHeights" : true,
+  "enemyAnimationChangesPose" : true,
+  "enemyCount" : 26,
+  "enemyRoutesAcrossHeights" : {
+    "eastAscent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        39.57196044921875,
+        6,
+        -49.652004241943359
+      ],
+      "frames" : 431,
+      "initialRouteWaypoints" : 4,
+      "maximumFootHeight" : 6,
+      "minimumFootHeight" : 0,
+      "passed" : true,
+      "target" : [
+        38,
+        6,
+        -51
+      ]
+    },
+    "westDescent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        -38.78466796875,
+        -6,
+        -49.052337646484375
+      ],
+      "frames" : 439,
+      "initialRouteWaypoints" : 5,
+      "maximumFootHeight" : 0,
+      "minimumFootHeight" : -6,
+      "passed" : true,
+      "target" : [
+        -38,
+        -6,
+        -51
+      ]
+    }
+  },
+  "enemySpawnsValid" : true,
+  "exitReachable" : true,
+  "fallingPlayerLandsOnUpperSlab" : true,
+  "focusReleaseClearsRunAndQueuedJump" : true,
+  "fragmentsHaveBallisticMotion" : true,
+  "fragmentsPerExplosion" : 32,
+  "fullscreen" : true,
+  "galleryUnderpass" : {
+    "bodyClearThroughout" : true,
+    "finalPosition" : [
+      40.985076904296875,
+      0,
+      -51
+    ],
+    "frames" : 63,
+    "largestFrameHeightChange" : 0,
+    "maximumFootHeight" : 0,
+    "minimumFootHeight" : 0,
+    "passed" : true,
+    "reachedTarget" : true,
+    "start" : [
+      35,
+      0,
+      -51
+    ],
+    "target" : [
+      41,
+      0,
+      -51
+    ],
+    "waypoints" : 1
+  },
+  "galleryUndersideStopsUpwardBody" : {
+    "bodyClearThroughout" : true,
+    "landedFootHeight" : 0,
+    "passed" : true,
+    "peakFootHeight" : 3.9499993324279785,
+    "probeInitialUpwardVelocity" : 13
+  },
+  "gateGlowsAndSparklesAfterThirdSeal" : true,
+  "gateRequiresAllThreeSeals" : true,
+  "gateStartsLocked" : true,
+  "gateUnlockIsOneTime" : true,
+  "heldSpaceDoesNotAutoJump" : true,
+  "largeExplosionsStayBounded" : true,
+  "leapCannotCrossWall" : true,
+  "leaperActuallyJumps" : true,
+  "leaperCount" : 4,
+  "leaperStaysNavigable" : true,
+  "lockedGateCannotWin" : true,
+  "measuredRunWalkRatio" : 1.543859601020813,
+  "metal" : true,
+  "mouseReleaseStopsFire" : true,
+  "mouseStillFires" : true,
+  "movementWorks" : true,
+  "nativeView" : true,
+  "newSpacePressJumpsAgain" : true,
+  "openGateTriggersVictory" : true,
+  "ordinaryShotDoesNotGib" : true,
+  "pauseClearsQueuedJump" : true,
+  "pickupSpawnsValid" : true,
+  "playerCanWalkBelowGallery" : true,
+  "poweredShotGibsLeaper" : true,
+  "poweredSplashEdgeGibs" : true,
+  "powerupExpires" : true,
+  "powerupFreezesWhenPaused" : true,
+  "powerupSurvivesWeaponSwitch" : true,
+  "quickTrackpadTapFires" : true,
+  "releasingShiftRestoresWalk" : true,
+  "renderFPSObserved" : 59.931646577934508,
+  "resetClearsPowerupAndEffects" : true,
+  "rightClickDoesNotJumpOrFire" : true,
+  "risingDebrisCannotCrossOverheadSlab" : true,
+  "rocketRetainsBloodfireAfterExpiry" : true,
+  "runningRespectsWalls" : true,
+  "shiftRunsWithoutJumping" : true,
+  "shootConsumesAmmo" : true,
+  "shortProjectileHitsWall" : true,
+  "shotCooldownEnforced" : true,
+  "simulationTicksPerSecond" : 59,
+  "spaceJumpsWithoutFiring" : true,
+  "spaceRepeatCannotDoubleJump" : true,
+  "spawnValid" : true,
+  "upperGalleryJumpAndLanding" : {
+    "jumpAccepted" : true,
+    "landedFootHeight" : 6,
+    "passed" : true,
+    "peakFootHeight" : 6.7916626930236816
+  },
+  "verticalCollections" : {
+    "elevatedOrSunkenPickupCount" : 6,
+    "elevatedOrSunkenSealCount" : 2,
+    "pickupsCollectOnTheirFloor" : true,
+    "pickupsRejectWrongFloor" : true,
+    "sealsCollectOnTheirFloor" : true,
+    "sealsRejectWrongFloor" : true
+  },
+  "verticalCombat" : {
+    "gallerySlabBlocksSight" : true,
+    "hostileProjectileCannotCrossGallery" : true,
+    "hostileSlabImpactCannotAlsoDamagePlayer" : true,
+    "openStairSightlineCrossesHeight" : true,
+    "rocketHitsVisibleEnemyOnHigherStair" : true,
+    "rocketMuzzleCannotCrossLowLandingSlab" : true,
+    "rocketStopsAtSlabWithoutSplashThroughIt" : true,
+    "shotgunCannotDamageThroughGallery" : true,
+    "shotgunHitsVisibleEnemyOnHigherStair" : true
+  },
+  "verticalStairRoutes" : {
+    "eastAscent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        38.027919769287109,
+        6,
+        -50.976593017578125
+      ],
+      "frames" : 398,
+      "largestFrameHeightChange" : 0.031341552734375,
+      "maximumFootHeight" : 6,
+      "minimumFootHeight" : 0,
+      "passed" : true,
+      "reachedTarget" : true,
+      "start" : [
+        31.700000762939453,
+        0,
+        -44
+      ],
+      "target" : [
+        38,
+        6,
+        -51
+      ],
+      "waypoints" : 4
+    },
+    "eastDescent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        31.71055793762207,
+        0,
+        -43.928459167480469
+      ],
+      "frames" : 398,
+      "largestFrameHeightChange" : 0.031327724456787109,
+      "maximumFootHeight" : 6,
+      "minimumFootHeight" : 0,
+      "passed" : true,
+      "reachedTarget" : true,
+      "start" : [
+        38,
+        6,
+        -51
+      ],
+      "target" : [
+        31.700000762939453,
+        0,
+        -44
+      ],
+      "waypoints" : 4
+    },
+    "westAscent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        -31.711297988891602,
+        0,
+        -43.9248046875
+      ],
+      "frames" : 406,
+      "largestFrameHeightChange" : 0.031314849853515625,
+      "maximumFootHeight" : 0,
+      "minimumFootHeight" : -6,
+      "passed" : true,
+      "reachedTarget" : true,
+      "start" : [
+        -38,
+        -6,
+        -51
+      ],
+      "target" : [
+        -31.700000762939453,
+        0,
+        -44
+      ],
+      "waypoints" : 6
+    },
+    "westDescent" : {
+      "bodyClearThroughout" : true,
+      "finalPosition" : [
+        -38.025043487548828,
+        -6,
+        -50.929000854492188
+      ],
+      "frames" : 405,
+      "largestFrameHeightChange" : 0.031341612339019775,
+      "maximumFootHeight" : 0,
+      "minimumFootHeight" : -6,
+      "passed" : true,
+      "reachedTarget" : true,
+      "start" : [
+        -31.700000762939453,
+        0,
+        -44
+      ],
+      "target" : [
+        -38,
+        -6,
+        -51
+      ],
+      "waypoints" : 5
+    }
+  },
+  "verticalStairsTraversableBothDirections" : true,
+  "wallBlocks" : true,
+  "windowVisible" : true,
+  "worldNodes" : 32
+}

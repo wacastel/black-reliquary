@@ -14,9 +14,18 @@ struct WalkRect {
         abs(x-self.x) <= width/2-margin && abs(z-self.z) <= depth/2-margin
     }
 }
-struct EnemySpawn { var x: Float; var z: Float; var kind: Int }
-struct PickupSpawn { var x: Float; var z: Float; var kind: Int } // 0 health, 1 shells, 2 rockets, 3 Bloodfire
-struct Zone { var name: String; var rect: WalkRect }
+struct EnemySpawn { var x: Float; var z: Float; var kind: Int; var y:Float=0 }
+struct PickupSpawn { var x: Float; var z: Float; var kind: Int; var y:Float=0 } // 0 health, 1 shells, 2 rockets, 3 Bloodfire
+struct Zone { var name: String; var rect: WalkRect; var y:Float=0 }
+struct WalkSurface {
+    var id:String; var rect:WalkRect; var y:Float
+    var slopeX:Float=0; var slopeZ:Float=0; var thickness:Float=0.35
+    /// Absolute underside elevation of this area's ceiling, in world coordinates.
+    var ceiling:Float=30
+    func heightAt(_ x:Float,_ z:Float)->Float {y+(x-rect.x)*slopeX+(z-rect.z)*slopeZ}
+    func heightAt(x:Float,z:Float)->Float {heightAt(x,z)}
+}
+struct SolidVolume { var rect:WalkRect; var bottom:Float; var top:Float }
 struct WorldData {
     let root: SCNNode
     let walkable: [WalkRect]
@@ -27,6 +36,8 @@ struct WorldData {
     let sigils: [SCNVector3]
     let exit: SCNVector3
     let zones: [Zone]
+    let surfaces:[WalkSurface]
+    let solids:[SolidVolume]
 }
 func v3(_ x: Float, _ y: Float, _ z: Float) -> SCNVector3 { SCNVector3(x,y,z) }
 func distanceXZ(_ a: SCNVector3, _ b: SCNVector3) -> Float { hypot(Float(a.x-b.x), Float(a.z-b.z)) }

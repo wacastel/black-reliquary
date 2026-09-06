@@ -10,7 +10,7 @@ extension Game {
         defer {reset();setMode("playing");testMode=wasTest}
         func clearEnemies() {enemies.forEach{$0.node.removeFromParentNode()};enemies=[]}
         func fixture(_ kind:Int,_ p:SIMD3<Float>) -> Foe {
-            let foe=Foe(spawn:EnemySpawn(x:p.x,z:p.z,kind:kind)); enemies.append(foe);scene.rootNode.addChildNode(foe.node);return foe
+            let foe=Foe(spawn:EnemySpawn(x:p.x,z:p.z,kind:kind,y:p.y)); enemies.append(foe);scene.rootNode.addChildNode(foe.node);return foe
         }
         func aimAt(_ foe:Foe) {
             let d=enemyCenter(foe)-position; yaw=atan2(-d.x,-d.z);pitch=atan2(d.y,hypot(d.x,d.z))
@@ -78,9 +78,9 @@ extension Game {
 
         reset();setMode("playing");clearEnemies()
         result["gateStartsLocked"] = !gate.isOpen && gate.sparks.birthRate==0 && gate.veil.opacity==0
-        for i in 0..<2 {position=seals[i].pos+SIMD3(0,1.65,0);updatePickups(0)}
+        for i in 0..<2 {position=seals[i].pos+SIMD3(0,0.45,0);updatePickups(0)}
         result["gateRequiresAllThreeSeals"]=sealCount==2 && !gate.isOpen && gate.sparks.birthRate==0
-        position=seals[2].pos+SIMD3(0,1.65,0);updatePickups(0);gate.update(sealCount:sealCount,time:elapsed)
+        position=seals[2].pos+SIMD3(0,0.45,0);updatePickups(0);gate.update(sealCount:sealCount,time:elapsed)
         result["gateGlowsAndSparklesAfterThirdSeal"]=sealCount==3 && gate.isOpen && gate.sparks.birthRate>0 && gate.light.intensity>0 && gate.veil.opacity>0
         result["gateUnlockIsOneTime"] = !gate.unlock()
         position=world.exit.f+SIMD3(0,1.65,0);tick();result["openGateTriggersVictory"]=mode=="won"
@@ -166,7 +166,7 @@ extension Game {
                     DispatchQueue.main.asyncAfter(deadline:.now()+0.12) {
                         self.savePreview(directory+"/Impact.png")
                         self.reset();self.setMode("playing");self.enemies.forEach{$0.node.removeFromParentNode()};self.enemies=[]
-                        for i in self.seals.indices {self.position=self.seals[i].pos+SIMD3(0,1.65,0);self.updatePickups(0)}
+                        for i in self.seals.indices {self.position=self.seals[i].pos+SIMD3(0,0.45,0);self.updatePickups(0)}
                         self.position=self.world.exit.f+SIMD3(0,1.65,7);self.yaw=0;self.pitch=0;self.updateCamera()
                         DispatchQueue.main.asyncAfter(deadline:.now()+1.2) {
                             self.savePreview(directory+"/Gate.png");NSApp.terminate(nil)

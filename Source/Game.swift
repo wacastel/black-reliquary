@@ -10,7 +10,6 @@ extension SCNVector3 {
 struct Missile { var node:SCNNode; var pos:SIMD3<Float>; var velocity:SIMD3<Float>; var life:Float; var hostile:Bool; var empowered:Bool }
 struct Loot { var node:SCNNode; var pos:SIMD3<Float>; var kind:Int; var collected:Bool=false }
 struct Seal { var node:SCNNode; var pos:SIMD3<Float>; var collected:Bool=false }
-struct GridKey:Hashable { var x:Int; var z:Int }
 final class RenderProbe: NSObject, SCNSceneRendererDelegate {
     private let lock=NSLock(); private var stamps=[TimeInterval]()
     func renderer(_ renderer:SCNSceneRenderer,didRenderScene scene:SCNScene,atTime time:TimeInterval) {
@@ -23,7 +22,7 @@ final class RenderProbe: NSObject, SCNSceneRendererDelegate {
 final class Game {
     let view:GameView; let hud:HUDView; let scene=SCNScene(); let cameraRig=SCNNode(); let camera=SCNNode()
     let renderProbe=RenderProbe(); let weaponRoot=SCNNode(); let muzzle=SCNNode(); let muzzleLight=SCNLight(); let audio=GameAudio()
-    var world:WorldData!; var timer:Timer?; var last:TimeInterval=0; var mode="menu"
+    var navigation:WorldNavigation!; var world:WorldData!; var timer:Timer?; var last:TimeInterval=0; var mode="menu"
     var keys=Set<UInt16>(); var mouseHeld=false; var position=SIMD3<Float>(0,1.65,4); var yaw:Float=0; var pitch:Float=0
     var sensitivity:Float=1; var health:Float=100; var shells=42; var rockets=10; var weapon=0; var kills=0
     var elapsed:Double=0; var cooldown:Float=0; var recoil:Float=0; var jumpVelocity:Float=0; var height:Float=0
@@ -41,17 +40,17 @@ final class Game {
         testMode=CommandLine.arguments.contains("--smoke-test") || enhancementTest; autoPlay=CommandLine.arguments.contains("--autoplay-test")
         view.game=self; view.scene=scene; view.pointOfView=camera; view.preferredFramesPerSecond=60
         view.delegate=renderProbe;view.antialiasingMode = .multisampling2X; view.isPlaying=true; view.rendersContinuously=true
-        scene.background.contents=color(0.009,0.011,0.01)
-        scene.fogColor=color(0.018,0.021,0.017); scene.fogStartDistance=15; scene.fogEndDistance=49
+        scene.background.contents=color(0.012,0.009,0.007)
+        scene.fogColor=color(0.027,0.021,0.015); scene.fogStartDistance=20; scene.fogEndDistance=62
         scene.lightingEnvironment.intensity=0.4
         let ambient=SCNNode(); ambient.light=SCNLight(); ambient.light!.type = .ambient; ambient.light!.color=color(0.39,0.36,0.30); ambient.light!.intensity=260; scene.rootNode.addChildNode(ambient)
-        let moon=SCNNode(); moon.light=SCNLight(); moon.light!.type = .directional; moon.light!.color=color(0.33,0.4,0.46); moon.light!.intensity=290; moon.eulerAngles=SCNVector3(-0.8,-0.6,0); scene.rootNode.addChildNode(moon)
+        let moon=SCNNode(); moon.light=SCNLight(); moon.light!.type = .directional; moon.light!.color=color(0.44,0.39,0.32); moon.light!.intensity=290; moon.eulerAngles=SCNVector3(-0.8,-0.6,0); scene.rootNode.addChildNode(moon)
         camera.camera=SCNCamera(); camera.camera!.fieldOfView=80; camera.camera!.zNear=0.045; camera.camera!.zFar=120
         camera.camera!.wantsHDR=true; camera.camera!.exposureOffset=0.12; camera.camera!.averageGray=0.2
-        camera.camera!.bloomIntensity=0.55; camera.camera!.bloomThreshold=0.8; camera.camera!.bloomBlurRadius=6
+        camera.camera!.bloomIntensity=0.32; camera.camera!.bloomThreshold=0.8; camera.camera!.bloomBlurRadius=6
         camera.camera!.vignettingIntensity=0.65; camera.camera!.vignettingPower=0.7
         cameraRig.addChildNode(camera); scene.rootNode.addChildNode(cameraRig); camera.addChildNode(weaponRoot)
-        let lamp=SCNNode(); lamp.light=SCNLight(); lamp.light!.type = .omni; lamp.light!.color=color(0.64,0.71,0.77); lamp.light!.intensity=90
+        let lamp=SCNNode(); lamp.light=SCNLight(); lamp.light!.type = .omni; lamp.light!.color=color(0.72,0.63,0.49); lamp.light!.intensity=90
         lamp.light!.attenuationStartDistance=0; lamp.light!.attenuationEndDistance=9; lamp.position=SCNVector3(0,0.5,0); camera.addChildNode(lamp)
         muzzleLight.type = .omni; muzzleLight.color=color(1,0.6,0.22); muzzleLight.intensity=0; muzzleLight.attenuationEndDistance=8
         muzzle.light=muzzleLight; camera.addChildNode(muzzle); muzzle.position=SCNVector3(0.25,-0.22,-0.7)
@@ -63,24 +62,26 @@ final class Game {
     }
     func reset() {
         world?.root.removeFromParentNode(); enemies.forEach{$0.node.removeFromParentNode()}; loot.forEach{$0.node.removeFromParentNode()}; seals.forEach{$0.node.removeFromParentNode()}; missiles.forEach{$0.node.removeFromParentNode()}; exitNode.removeFromParentNode()
-        world=buildWorld(); scene.rootNode.addChildNode(world.root); position=world.spawn.f; yaw=0; pitch=0
+        world=buildWorld(); navigation=WorldNavigation(data:world)
+        for seal in world.sigils.prefix(2) {_ = navigation.route(from:world.spawn.f-SIMD3(0,1.65,0),to:seal.f-SIMD3(0,1.2,0))}
+        scene.rootNode.addChildNode(world.root); position=world.spawn.f; yaw=0; pitch=0
         health=100; shells=42; rockets=10; weapon=0; kills=0; elapsed=0; height=0; jumpVelocity=0; cooldown=0; recoil=0
         damageFlash=0; hitFlash=0; messageTime=0; keys.removeAll(); mouseHeld=false; enemies=[]; loot=[]; seals=[]; missiles=[]
         effectsRoot.childNodes.forEach{$0.removeFromParentNode()}; fragments=[]; powerupRemaining=0; trauma=0; jumpRequested=false
         autoIndex=0; autoRoute=[]; autoNext=0; autoClock=0; lastZone=""
         for spawn in world.enemies { let foe=Foe(spawn:spawn); enemies.append(foe); scene.rootNode.addChildNode(foe.node) }
         for p in world.pickups {
-            let node=makeLoot(p.kind); node.position=v3(p.x,p.kind==3 ? 1.05:0.48,p.z); scene.rootNode.addChildNode(node)
-            loot.append(Loot(node:node,pos:SIMD3(p.x,0,p.z),kind:p.kind))
+            let node=makeLoot(p.kind); node.position=v3(p.x,p.y+(p.kind==3 ? 1.05:0.48),p.z); scene.rootNode.addChildNode(node)
+            loot.append(Loot(node:node,pos:SIMD3(p.x,p.y,p.z),kind:p.kind))
         }
         for (i,p) in world.sigils.enumerated() {
             let n=SCNNode(); let mat=simpleMaterial(color(0.78,0.57,0.21),emission:color(0.36,0.19,0.03))
             let ring=SCNTorus(ringRadius:0.43,pipeRadius:0.048); ring.materials=[mat]; let r=SCNNode(geometry:ring); r.eulerAngles.x = .pi/2; n.addChildNode(r)
             for j in 0..<4 { let g=SCNBox(width:0.09,height:0.65,length:0.09,chamferRadius:0.012);g.materials=[mat];let t=SCNNode(geometry:g);t.eulerAngles.z=CGFloat(j) * .pi/4;n.addChildNode(t) }
             let core=SCNSphere(radius:0.12);core.materials=[simpleMaterial(color(0.5,0.92,1),emission:color(0.5,0.92,1))];n.addChildNode(SCNNode(geometry:core))
-            n.position=v3(Float(p.x),1.35,Float(p.z)); n.name="seal\(i)";n.categoryBitMask=4;scene.rootNode.addChildNode(n);seals.append(Seal(node:n,pos:p.f))
+            n.position=v3(Float(p.x),Float(p.y)+0.15,Float(p.z)); n.name="seal\(i)";n.categoryBitMask=4;scene.rootNode.addChildNode(n);seals.append(Seal(node:n,pos:p.f))
         }
-        gate=ExitGate(); exitNode=gate.node; exitNode.position=world.exit; exitNode.position.y=1.8; scene.rootNode.addChildNode(exitNode)
+        gate=ExitGate(); exitNode=gate.node; exitNode.position=world.exit; exitNode.position.y += 1.8; scene.rootNode.addChildNode(exitNode)
         makeWeapon(); updateCamera(); refreshHUD()
     }
     func makeLoot(_ kind:Int)->SCNNode {
@@ -141,28 +142,45 @@ final class Game {
     }
     func click(){if mode=="menu" {begin()} else if mode=="paused" {begin()} else if mode=="playing" {if !view.mouseCaptured {view.captureMouse()};mouseHeld=true;shoot()} else {reset();begin()}}
     func look(_ dx:CGFloat,_ dy:CGFloat) {guard mode=="playing",view.mouseCaptured else{return};yaw -= Float(dx)*0.0025*sensitivity;pitch=max(-1.3,min(1.3,pitch-Float(dy)*0.0025*sensitivity))}
+    var playerFoot:SIMD3<Float> {position-SIMD3(0,1.65,0)}
     func allowed(_ p:SIMD3<Float>,radius:Float=0.32)->Bool {
-        for i in 0..<8 {let a=Float(i) * .pi/4;let x=p.x+cos(a)*radius;let z=p.z+sin(a)*radius
-            if !world.walkable.contains(where:{$0.contains(x,z)}) {return false}
-            if world.obstacles.contains(where:{$0.contains(x,z)}) {return false}
-        };return true
+        navigation.clearBody(at:p,radius:radius,height:0.1)
     }
-    func canSee(_ a:SIMD3<Float>,_ b:SIMD3<Float>)->Bool {
-        let d=b-a;let steps=max(1,Int(ceil(simd_length(d)/0.2)));for i in 1...steps {let p=a+d*(Float(i)/Float(steps));if !allowed(p,radius:0.05) {return false}};return true
-    }
+    func canSee(_ a:SIMD3<Float>,_ b:SIMD3<Float>)->Bool {navigation.lineClear(from:a,to:b)}
     func move(_ p:SIMD3<Float>,by d:SIMD3<Float>,radius:Float=0.32)->SIMD3<Float> {
-        var q=p;let steps=max(1,Int(simd_length(d)/0.2)+1);let delta=d/Float(steps)
-        for _ in 0..<steps {var t=q;t.x += delta.x;if allowed(t,radius:radius){q.x=t.x};t=q;t.z += delta.z;if allowed(t,radius:radius){q.z=t.z}}
-        return q
+        navigation.moveGround(from:p,by:d,radius:radius)
     }
-    func path(from:SIMD3<Float>,to:SIMD3<Float>)->[SIMD2<Float>] {
-        let start=GridKey(x:Int((from.x/2).rounded()),z:Int((from.z/2).rounded()));let end=GridKey(x:Int((to.x/2).rounded()),z:Int((to.z/2).rounded()))
-        if start==end{return []};var queue=[start];var visited:Set<GridKey>=[start];var parent=[GridKey:GridKey]();var index=0
-        while index<queue.count && index<4500 {
-            let k=queue[index];index += 1
-            if k==end {var path=[SIMD2<Float>]();var v=k;while v != start {path.append(SIMD2(Float(v.x)*2,Float(v.z)*2));guard let p=parent[v] else{break};v=p};return path.reversed()}
-            for (dx,dz) in [(1,0),(-1,0),(0,1),(0,-1)] {let next=GridKey(x:k.x+dx,z:k.z+dz);if visited.contains(next){continue};let p=SIMD3(Float(next.x)*2,0,Float(next.z)*2);if !allowed(p,radius:0.4){continue};visited.insert(next);parent[next]=k;queue.append(next)}
-        };return []
+    func path(from:SIMD3<Float>,to:SIMD3<Float>)->[SIMD3<Float>] {
+        navigation.route(from:from,to:to)
+    }
+    func movePlayer(by delta:SIMD3<Float>) {
+        var foot=playerFoot
+        if height<0.025 && jumpVelocity<=0 {foot=move(foot,by:delta)}
+        else {
+            let steps=max(1,Int(ceil(simd_length(delta)/0.15)))
+            for _ in 0..<steps {
+                var next=foot;next.x+=delta.x/Float(steps)
+                if navigation.clearBody(at:next){foot=next}
+                next=foot;next.z+=delta.z/Float(steps)
+                if navigation.clearBody(at:next){foot=next}
+            }
+        }
+        position=foot+SIMD3(0,1.65,0)
+    }
+    func updatePlayerGravity(_ dt:Float) {
+        var foot=playerFoot
+        let floor=navigation.floorHeight(at:foot,stepUp:0.025) ?? -30
+        jumpVelocity-=dt*15
+        let nextY=foot.y+jumpVelocity*dt
+        if jumpVelocity<=0 && nextY<=floor {
+            foot.y=floor;jumpVelocity=0
+        } else {
+            var next=foot;next.y=nextY
+            if jumpVelocity<=0 || navigation.clearBody(at:next) {foot=next}
+            else {jumpVelocity=0}
+        }
+        height=max(0,foot.y-floor);position=foot+SIMD3(0,1.65,0)
+        if foot.y < -20 {damage(100)}
     }
     func shoot() {
         guard cooldown<=0 else{return}
@@ -180,7 +198,7 @@ final class Game {
                 guard dist>0.001 else {continue}
                 let dot=simd_dot(simd_normalize(aim),forward)
                 let tolerance:Float=0.07+0.5/max(1,dist)
-                if dot>cos(tolerance) && dist<27 && canSee(position,e.position) {
+                if dot>cos(tolerance) && dist<27 && canSee(position,enemyCenter(e)) {
                     let amount:Float=dist<8 ? 64:(dist<17 ? 44:27)
                     hurtEnemy(e,amount:amount*weaponDamageMultiplier,empowered:powered,direction:forward)
                     hitFlash=0.2
@@ -192,7 +210,9 @@ final class Game {
             if let h=hits.first {spark(at:h.worldCoordinates.f,c:powered ? color(1,0.2,0.02):color(1,0.64,0.24),count:powered ? 25:7)}
         } else {
             rockets-=1; audio.play(powered ? "empowered_rocket":"rocket")
-            spawnMissile(at:position+forward*0.7+SIMD3(0,-0.1,0),velocity:forward*24,hostile:false,empowered:powered)
+            let launch=position+forward*0.7+SIMD3(0,-0.1,0)
+            if canSee(position,launch) {spawnMissile(at:launch,velocity:forward*24,hostile:false,empowered:powered)}
+            else {explode(position,empowered:powered)}
         }
     }
     func hurtEnemy(_ e:Foe,amount:Float,empowered powered:Bool=false,direction:SIMD3<Float> = .zero) {
@@ -230,7 +250,7 @@ final class Game {
         n.runAction(.sequence([.group([.scale(to:powered ? 8:5,duration:0.23),.fadeOut(duration:0.23)]),.removeFromParentNode()]))
         for e in enemies where e.health>0 {
             let dist=simd_distance(enemyCenter(e),p)
-            if dist<5.5 && canSee(p,e.position) {
+            if dist<5.5 && canSee(p,enemyCenter(e)) {
                 let blast=125*(1-dist/6.5)
                 hurtEnemy(e,amount:powered ? max(140,blast*5):blast,empowered:powered,direction:enemyCenter(e)-p); hitFlash=0.2
             }
@@ -249,17 +269,17 @@ final class Game {
             if !autoPlay {updatePlayerInput(dt)}
             updateEnemies(dt);if mode=="playing" {updateMissiles(dt)};if mode=="playing" {updatePickups(dt)}
             if autoPlay {runAutoplay(dt)}
-            let zone=world.zones.first(where:{$0.rect.contains(position.x,position.z)})?.name ?? "The Passage"
+            let zone=world.zones.filter{$0.rect.contains(position.x,position.z)}.min{abs($0.y-playerFoot.y)<abs($1.y-playerFoot.y)}?.name ?? "The Passage"
             if zone != lastZone {lastZone=zone}
             gate.update(sealCount:sealCount,time:elapsed)
             if mode=="playing" && gate.isOpen {
-                if simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<2.1 {setMode("won");audio.play("win")}
+                if abs(playerFoot.y-Float(world.exit.y))<1 && simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<2.1 {setMode("won");audio.play("win")}
             }
             updateCamera()
         } else if mode=="menu" {cameraRig.position=world.spawn;cameraRig.eulerAngles.y=CGFloat(sin(now*0.07)*0.13);camera.eulerAngles.x=0.09}
         muzzleLight.intensity=max(0,muzzleLight.intensity-CGFloat(dt)*7000)
-        for (i,s) in seals.enumerated() where !s.collected {s.node.eulerAngles.y=CGFloat(now)*0.6;s.node.position.y=1.35+CGFloat(sin(now*1.7+Double(i)))*0.13}
-        for l in loot where !l.collected {l.node.eulerAngles.y=CGFloat(now)*0.5;if l.kind==3 {l.node.position.y=1.05+CGFloat(sin(now*2.1))*0.12}}
+        for (i,s) in seals.enumerated() where !s.collected {s.node.eulerAngles.y=CGFloat(now)*0.6;s.node.position.y=CGFloat(s.pos.y)+0.15+CGFloat(sin(now*1.7+Double(i)))*0.13}
+        for l in loot where !l.collected {l.node.eulerAngles.y=CGFloat(now)*0.5;if l.kind==3 {l.node.position.y=CGFloat(l.pos.y)+1.05+CGFloat(sin(now*2.1))*0.12}}
         SCNTransaction.commit();refreshHUD()
         if testMode && elapsed>4 && !screenshotTaken {runSmokeTests();screenshotTaken=true}
         if autoPlay && mode=="won" && !metricsWritten {writeMetrics(["autoplayWon":true,"seconds":elapsed,"kills":kills,"seals":sealCount,"health":health,"renderFPSObserved":renderProbe.framesPerSecond]);metricsWritten=true;DispatchQueue.main.asyncAfter(deadline:.now()+1){NSApp.terminate(nil)}}
@@ -279,13 +299,12 @@ final class Game {
         if x != 0 || z != 0 {
             let dir=simd_normalize(SIMD3(cos(yaw)*x-sin(yaw)*z,0,-sin(yaw)*x-cos(yaw)*z))
             let running=keys.contains(56)
-            position=move(position,by:dir*(running ? GameTuning.runSpeed:GameTuning.walkSpeed)*dt)
+            movePlayer(by:dir*(running ? GameTuning.runSpeed:GameTuning.walkSpeed)*dt)
             bob+=dt*(running ? 14:10)
         } else {bob+=dt*1.4}
         // Consume the press even when airborne: holding Space never repeats a jump.
         if jumpRequested {jumpRequested=false;_ = jump()}
-        jumpVelocity-=dt*15; height=max(0,height+jumpVelocity*dt)
-        if height==0 {jumpVelocity=0};position.y=1.65+height
+        updatePlayerGravity(dt)
         if mouseHeld {shoot()}
     }
     @discardableResult func jump() -> Bool {
@@ -297,8 +316,9 @@ final class Game {
         for e in enemies where e.health>0 {
             let before=e.position
             let dist=simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z))
-            let visible=dist<24 && canSee(e.position,position)
-            if (dist<15 && visible) || dist<5 {
+            let visible=dist<24 && canSee(enemyCenter(e),position)
+            let sameLevel=abs(playerFoot.y-e.position.y)<1.1
+            if (dist<15 && visible) || (dist<5 && sameLevel) {
                 if !e.active && e.kind==2 {audio.play("monster_roar")}
                 e.active=true
             }
@@ -306,32 +326,37 @@ final class Game {
             if e.active {
                 var delta=position-e.position; delta.y=0
                 if simd_length(delta)>0.01 {e.node.eulerAngles.y=CGFloat(atan2(-delta.x,-delta.z))}
-                if e.kind==2 && e.leapRemaining<=0 && e.leapCooldown<=0 && visible && dist>2.5 && dist<10 {
+                if e.kind==2 && e.leapRemaining<=0 && e.leapCooldown<=0 && visible && sameLevel && dist>2.5 && dist<10 {
                     e.leapDirection=simd_normalize(delta); e.leapRemaining=0.78; e.leapCooldown=2.6
                     e.attackAnimation=0.55; audio.play("monster_leap")
                 }
                 if e.leapRemaining>0 {
                     e.leapRemaining=max(0,e.leapRemaining-dt)
-                    e.position=move(e.position,by:e.leapDirection*9.5*dt,radius:0.4)
-                    e.leapHeight=sin((1-e.leapRemaining/0.78) * .pi)*2.25
+                    let nextGround=move(e.position,by:e.leapDirection*9.5*dt,radius:0.4)
+                    let nextHeight=sin((1-e.leapRemaining/0.78) * .pi)*2.25
+                    // Pounce clearance uses the visible airborne body, including gallery undersides.
+                    if navigation.clearBody(at:nextGround+SIMD3(0,nextHeight,0),radius:0.4) {
+                        e.position=nextGround;e.leapHeight=nextHeight
+                    } else if navigation.clearBody(at:e.position+SIMD3(0,nextHeight,0),radius:0.4) {
+                        e.leapHeight=nextHeight
+                    }
                     if e.leapRemaining==0 {
                         e.leapHeight=0; e.cooldown=0.65; audio.play("monster_land")
                         spark(at:e.position+SIMD3(0,0.15,0),c:color(0.36,0.43,0.13),count:12)
-                        if simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z))<2.4 && height<1 && canSee(e.position,position) {damage(19)}
+                        if simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z))<2.4 && abs(playerFoot.y-e.position.y)<1 && canSee(enemyCenter(e),position) {damage(19)}
                     }
                 } else {
-                    if dist>1.55 && (e.kind != 1 || dist>8 || !visible) {
+                    if (dist>1.55 || !sameLevel) && (e.kind != 1 || dist>8 || !visible || !sameLevel) {
                         var target=position
-                        if !visible {
-                            if e.repath<=0 {e.route=path(from:e.position,to:position);e.repath=1.1}
-                            if let first=e.route.first {target=SIMD3(first.x,0,first.y);if simd_length(SIMD2(target.x-e.position.x,target.z-e.position.z))<0.5 {e.route.removeFirst()}}
-                        }
+                        // Sight over a low tomb or across a gallery does not imply a walkable line.
+                        if e.repath<=0 {e.route=path(from:e.position,to:playerFoot);e.repath=1.1}
+                        if let first=e.route.first {target=first;if simd_distance(target,e.position)<0.4 {e.route.removeFirst()}}
                         var dir=target-e.position; dir.y=0
                         if simd_length(dir)>0.05 {
                             dir=simd_normalize(dir); var sep=SIMD3<Float>.zero
                             for other in enemies where other !== e && other.health>0 {
                                 var d=e.position-other.position; d.y=0; let len=simd_length(d)
-                                if len<0.85 && len>0.01 {sep+=d/len*(0.85-len)*2}
+                                if abs(e.position.y-other.position.y)<1.2 && len<0.85 && len>0.01 {sep+=d/len*(0.85-len)*2}
                             }
                             let speed:Float=e.kind==0 ? 3.25:(e.kind==1 ? 2.5:3.8)
                             e.position=move(e.position,by:(dir*speed+sep)*dt,radius:0.4)
@@ -341,7 +366,7 @@ final class Game {
                         e.position=move(e.position,by:side*1.3*dt,radius:0.4)
                     }
                     if e.cooldown<=0 && visible {
-                        if e.kind != 1 && dist<1.95 && height<1.2 {
+                        if e.kind != 1 && dist<1.95 && abs(playerFoot.y-e.position.y)<1.2 {
                             damage(e.kind==2 ? 15:12); e.cooldown=e.kind==2 ? 0.8:0.95; e.attackAnimation=0.55
                         } else if e.kind==1 && dist<23 {
                             let origin=enemyCenter(e); spawnMissile(at:origin,velocity:simd_normalize(position-origin)*7,hostile:true)
@@ -349,6 +374,10 @@ final class Game {
                         }
                     }
                 }
+            }
+            if let floor=navigation.floorHeight(at:e.position,stepUp:0.025) {
+                if e.position.y>floor+0.025 {e.fallVelocity-=dt*15;e.position.y=max(floor,e.position.y+e.fallVelocity*dt)}
+                else {e.position.y=floor;e.fallVelocity=0}
             }
             e.node.position=SCNVector3(e.position+SIMD3(0,e.leapHeight,0))
             e.animate(time:elapsed,delta:dt,moving:simd_distance(e.position,before)>0.003)
@@ -358,8 +387,9 @@ final class Game {
     func updateMissiles(_ dt:Float) {
         for i in missiles.indices.reversed() {
             var m=missiles[i];m.life -= dt;let old=m.pos;m.pos += m.velocity*dt
-            var impact = !canSee(old,m.pos) || m.pos.y<0.1 || m.pos.y>9 || m.life<=0
-            if m.hostile {if simd_distance(m.pos,position)<0.6 {damage(16);impact=true}}
+            let blocked = !canSee(old,m.pos)
+            var impact = blocked || m.life<=0
+            if m.hostile {if !blocked && simd_distance(m.pos,position)<0.6 {damage(16);impact=true}}
             else {for e in enemies where e.health>0 {if simd_distance(m.pos,enemyCenter(e))<0.85 {impact=true;break}}}
             if impact {m.node.removeFromParentNode();missiles.remove(at:i);if !m.hostile {explode(old,empowered:m.empowered)} else {spark(at:old,c:color(0.1,0.65,0.9),count:7)}}
             else {m.node.position=SCNVector3(m.pos);missiles[i]=m}
@@ -367,15 +397,15 @@ final class Game {
     }
     func updatePickups(_ dt:Float) {
         for i in loot.indices where !loot[i].collected {
-            if simd_length(SIMD2(position.x-loot[i].pos.x,position.z-loot[i].pos.z))<1.15 {
+            if abs(playerFoot.y-loot[i].pos.y)<1.1 && simd_length(SIMD2(position.x-loot[i].pos.x,position.z-loot[i].pos.z))<1.15 {
                 if loot[i].kind==0 && health>=100 {continue}
                 switch loot[i].kind {case 0:health=min(100,health+35);announce("VITALITY RESTORED · +35");case 1:shells += 14;announce("+14 IRON SHELLS");case 2:rockets += 5;announce("+5 CINDER ROCKETS");case 3:activatePowerup();default:break}
                 loot[i].collected=true;loot[i].node.removeFromParentNode();if loot[i].kind != 3 {audio.play("pickup")}
             }
         }
         for i in seals.indices where !seals[i].collected {
-            if simd_length(SIMD2(position.x-seals[i].pos.x,position.z-seals[i].pos.z))<1.65 {
-                let guards=enemies.contains{$0.health>0 && simd_distance(SIMD2($0.position.x,$0.position.z),SIMD2(seals[i].pos.x,seals[i].pos.z))<10}
+            if abs(position.y-seals[i].pos.y)<1.3 && simd_length(SIMD2(position.x-seals[i].pos.x,position.z-seals[i].pos.z))<1.65 {
+                let guards=enemies.contains{$0.health>0 && abs($0.position.y-(seals[i].pos.y-1.2))<2.5 && simd_distance(SIMD2($0.position.x,$0.position.z),SIMD2(seals[i].pos.x,seals[i].pos.z))<10}
                 if guards {if messageTime<0.2 {announce("THE SEAL IS BOUND · SLAY ITS GUARDIANS",for:2)};continue}
                 seals[i].collected=true;seals[i].node.removeFromParentNode();health=min(100,health+20);audio.play("seal")
                 if sealCount==3 {announce("THE GATE IS OPEN · FOLLOW ITS EMERALD LIGHT",for:6);if gate.unlock() {audio.play("gate_open");spark(at:world.exit.f+SIMD3(0,1.8,0),c:color(0.3,1,0.6),count:90)}}
@@ -394,14 +424,15 @@ final class Game {
     func runSmokeTests() {
         var result=[String:Any]();result["arm64"]=true;result["metal"]=view.renderingAPI == .metal;result["worldNodes"]=world.root.childNodes.count
         result["spawnValid"]=allowed(world.spawn.f);result["wallBlocks"] = !allowed(SIMD3(100,0,100));result["shortProjectileHitsWall"] = !canSee(SIMD3(8.9,1,0),SIMD3(9.1,1,0));result["enemyCount"]=enemies.count
-        result["allSealsReachable"]=world.sigils.allSatisfy{!path(from:world.spawn.f,to:$0.f).isEmpty};result["exitReachable"] = !path(from:world.spawn.f,to:world.exit.f).isEmpty
-        result["enemySpawnsValid"]=world.enemies.allSatisfy{allowed(SIMD3($0.x,0,$0.z),radius:0.4)}
-        result["pickupSpawnsValid"]=world.pickups.allSatisfy{allowed(SIMD3($0.x,0,$0.z),radius:0.1)}
-        let before=position;position=move(position,by:SIMD3(0,0,-1));result["movementWorks"]=simd_distance(before,position)>0.8;position=before
+        result["allSealsReachable"]=world.sigils.allSatisfy{!path(from:world.spawn.f-SIMD3(0,1.65,0),to:$0.f-SIMD3(0,1.2,0)).isEmpty};result["exitReachable"] = !path(from:world.spawn.f-SIMD3(0,1.65,0),to:world.exit.f).isEmpty
+        result["enemySpawnsValid"]=world.enemies.allSatisfy{allowed(SIMD3($0.x,$0.y,$0.z),radius:0.4)}
+        result["pickupSpawnsValid"]=world.pickups.allSatisfy{allowed(SIMD3($0.x,$0.y,$0.z),radius:0.1)}
+        let before=position;movePlayer(by:SIMD3(0,0,-1));result["movementWorks"]=simd_distance(before,position)>0.8;position=before
         let oldShells=shells;shoot();result["shootConsumesAmmo"]=shells==oldShells-1
         result["windowVisible"]=view.window?.isVisible ?? false;result["nativeView"]=true;result["renderFPSObserved"]=renderProbe.framesPerSecond;result["simulationTicksPerSecond"]=fps;result["fullscreen"]=view.window?.styleMask.contains(.fullScreen) ?? false
-        if enhancementTest {result.merge(runEnhancementTests()){_,new in new}}
+        if enhancementTest {result.merge(runEnhancementTests()){_,new in new};result.merge(runVerticalTests()){_,new in new}}
         writeMetrics(result)
+        if let directory=ProcessInfo.processInfo.environment["RELIQUARY_ARCHITECTURE_DIR"] {captureArchitecture(in:directory);return}
         if let directory=ProcessInfo.processInfo.environment["RELIQUARY_SHOWCASE_DIR"] {captureShowcase(in:directory);return}
         if let path=ProcessInfo.processInfo.environment["RELIQUARY_SCREENSHOT"] {let image=view.snapshot();if let data=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:data),let png=bitmap.representation(using:.png,properties:[:]) {try? png.write(to:URL(fileURLWithPath:path))}}
         if let path=ProcessInfo.processInfo.environment["RELIQUARY_PLAY_SCREENSHOT"] {refreshHUD();savePreview(path)}
@@ -415,20 +446,21 @@ final class Game {
         let preview=NSImage(size:view.bounds.size);preview.lockFocus();view.snapshot().draw(in:view.bounds);hud.draw(hud.bounds);preview.unlockFocus()
         if let data=preview.tiffRepresentation,let bitmap=NSBitmapImageRep(data:data),let png=bitmap.representation(using:.png,properties:[:]) {try? png.write(to:URL(fileURLWithPath:path))}
     }
-    var autoIndex=0;var autoRoute=[SIMD2<Float>]();var autoNext:Float=0;var autoClock:Float=0
+    var autoIndex=0;var autoRoute=[SIMD3<Float>]();var autoNext:Float=0;var autoClock:Float=0
     func runAutoplay(_ dt:Float) {
         // Exercising normal navigation, weapon damage, pickups, and the exit condition without input injection.
         autoClock += dt;health=100
-        let targets=world.sigils.map{$0.f}+[world.exit.f]
+        let targets=world.sigils.map{$0.f-SIMD3(0,1.2,0)}+[world.exit.f]
         if autoIndex>=targets.count{return}
-        let nearby=enemies.filter{$0.health>0 && simd_distance($0.position,position)<19 && canSee(position,$0.position)}.min{simd_distance($0.position,position)<simd_distance($1.position,position)}
+        let nearby=enemies.filter{$0.health>0 && simd_distance($0.position,position)<19 && canSee(position,enemyCenter($0))}.min{simd_distance($0.position,position)<simd_distance($1.position,position)}
         if let e=nearby {let delta=enemyCenter(e)-position;yaw=atan2(-delta.x,-delta.z);pitch=atan2(delta.y,hypot(delta.x,delta.z));shells=max(shells,10);weapon=0;shoot()}
         else {
-            let t=targets[autoIndex];if autoNext<=0 {autoRoute=path(from:position,to:t);autoNext=1};autoNext -= dt
-            var next=t;if let p=autoRoute.first {next=SIMD3(p.x,1.65,p.y);if simd_distance(SIMD2(position.x,position.z),p)<0.35 {autoRoute.removeFirst()}}
-            var dir=next-position;dir.y=0;if simd_length(dir)>0.1 {dir=simd_normalize(dir);position=move(position,by:dir*5.7*dt);yaw=atan2(-dir.x,-dir.z);pitch=0}
+            let t=targets[autoIndex];if autoNext<=0 {autoRoute=path(from:playerFoot,to:t);autoNext=1};autoNext -= dt
+            var next=t+SIMD3(0,1.65,0);if let p=autoRoute.first {next=p+SIMD3(0,1.65,0);if simd_distance(playerFoot,p)<0.4 {autoRoute.removeFirst()}}
+            var dir=next-position;dir.y=0;if simd_length(dir)>0.1 {dir=simd_normalize(dir);movePlayer(by:dir*5.7*dt);yaw=atan2(-dir.x,-dir.z);pitch=0}
             if autoIndex<3 && seals[autoIndex].collected {autoIndex += 1;autoNext=0}
         }
-        if autoClock>240 && !metricsWritten {writeMetrics(["autoplayWon":false,"index":autoIndex,"position":[position.x,position.y,position.z],"kills":kills,"seals":sealCount]);metricsWritten=true;NSApp.terminate(nil)}
+        updatePlayerGravity(dt)
+        if autoClock>360 && !metricsWritten {writeMetrics(["autoplayWon":false,"index":autoIndex,"position":[position.x,position.y,position.z],"kills":kills,"seals":sealCount]);metricsWritten=true;NSApp.terminate(nil)}
     }
 }

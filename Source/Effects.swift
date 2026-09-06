@@ -163,7 +163,8 @@ extension Game {
             else { geo=SCNBox(width:size*1.7,height:size,length:size*1.35,chamferRadius:0) }
             geo.materials=[i%4==0 ? bone:(i%4==1 ? iron:flesh)]
             let n=SCNNode(geometry:geo); n.categoryBitMask=4; n.name="gore-fragment"
-            var p=move(origin,by:SIMD3(Float.random(in:-0.42...0.42),0,Float.random(in:-0.42...0.42)),radius:0.08)
+            var p=origin+SIMD3(Float.random(in:-0.42...0.42),0,Float.random(in:-0.42...0.42))
+            if !navigation.clearBody(at:p,radius:0.08,height:0.16){p=origin}
             p.y += Float.random(in:-0.4...0.5)
             n.position=SCNVector3(p); effectsRoot.addChildNode(n)
             let angle=Float(i)*2 * .pi/32+Float.random(in:-0.16...0.16), speed=Float.random(in:3.5...6.5)
@@ -202,7 +203,7 @@ extension Game {
         // A short-lived stain gives the impact weight without accumulating geometry.
         let stain=SCNCylinder(radius:0.92,height:0.009); stain.radialSegmentCount=12
         stain.materials=[simpleMaterial(color(0.30,0.011,0.008))]
-        let pool=SCNNode(geometry:stain); pool.position=v3(0,0.018-origin.y,0); pool.scale=SCNVector3(1,1,0.70)
+        let pool=SCNNode(geometry:stain); pool.position=v3(0,(navigation.floorHeight(at:origin,stepUp:0) ?? e.position.y)+0.018-origin.y,0); pool.scale=SCNVector3(1,1,0.70)
         pool.categoryBitMask=4; burst.addChildNode(pool)
         pool.runAction(.sequence([.wait(duration:7),.fadeOut(duration:2),.removeFromParentNode()]))
     }
@@ -212,11 +213,17 @@ extension Game {
             var f=fragments[i]; f.life-=dt
             if f.life<=0 { f.node.removeFromParentNode(); fragments.remove(at:i); continue }
             f.velocity.y-=dt*12
-            var next=move(f.position,by:f.velocity*dt,radius:0.08)
+            var next=f.position+f.velocity*dt
+            var lateral=next;lateral.y=f.position.y
+            if !navigation.clearBody(at:lateral,radius:0.08,height:0.16) {next.x=f.position.x;next.z=f.position.z}
             if abs(next.x-f.position.x)<0.001 { f.velocity.x *= -0.32 }
             if abs(next.z-f.position.z)<0.001 { f.velocity.z *= -0.32 }
-            next.y=max(0.08,f.position.y+f.velocity.y*dt)
-            if next.y<=0.08 { f.velocity.y=abs(f.velocity.y)*0.26; f.velocity.x *= 0.85; f.velocity.z *= 0.85 }
+            if f.velocity.y>0 && (!navigation.lineClear(from:f.position,to:next) || !navigation.clearBody(at:next,radius:0.08,height:0.16)) {
+                next.y=f.position.y;f.velocity.y *= -0.32
+            }
+            let floor=(navigation.floorHeight(at:SIMD3(next.x,f.position.y,next.z),stepUp:0) ?? -30)+0.08
+            next.y=max(floor,next.y)
+            if next.y<=floor { f.velocity.y=abs(f.velocity.y)*0.26; f.velocity.x *= 0.85; f.velocity.z *= 0.85 }
             f.position=next; f.node.position=SCNVector3(next)
             f.node.eulerAngles=SCNVector3(f.node.eulerAngles.f+f.spin*dt)
             f.node.opacity=CGFloat(min(1,f.life)); fragments[i]=f
