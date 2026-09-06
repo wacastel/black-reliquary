@@ -47,7 +47,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate,NSWindowDelegate {
         game=Game(view:view,hud:hud)
         if CommandLine.arguments.contains("--fullscreen") {window.toggleFullScreen(nil)}
     }
-    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Black Reliquary",.applicationVersion:"0.1 — The Hollow Cathedral",.credits:NSAttributedString(string:"An original gothic FPS prototype.\nNative Apple Silicon • Swift • Metal\nOriginal procedural architecture and audio.")])}
+    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Black Reliquary",.applicationVersion:"0.2 — Bloodfire",.credits:NSAttributedString(string:"An original gothic FPS prototype.\nNative Apple Silicon • Swift • Metal\nOriginal procedural architecture and audio.")])}
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{true}
     func applicationWillTerminate(_ notification:Notification){view?.releaseMouse();game?.audio.stop();game?.timer?.invalidate()}
     func windowDidResignKey(_ notification:Notification){view?.releaseMouse();if game?.mode=="playing" && game?.testMode==false && game?.autoPlay==false {game?.setMode("paused")}}

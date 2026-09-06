@@ -2,7 +2,7 @@
 
 **Chapter 01 — The Hollow Cathedral**
 
-An original gothic first-person shooter prototype for Apple Silicon Macs. A compact cathedral level designed for roughly five minutes of first-time play: recover three seals, fight their guardians, and escape through the northern gate.
+An original gothic first-person shooter prototype for Apple Silicon Macs. Fight through a weathered cathedral with dark stone, rust, and ominous light: recover three seals, defeat their guardians, and escape through the northern gate. The compact level is designed for roughly five minutes of first-time play.
 
 ## Play
 
@@ -36,9 +36,17 @@ The app uses a local ad-hoc signature and has not been notarized for public dist
 
 ## Your objective
 
-Follow the central aisle to the crossing. The west ossuary, east furnace chapel, and northern crypt each hold a floating gold seal. Defeat nearby guardians before collecting a seal. Once all three are yours, continue north through the crypt to the glowing gate.
+Follow the central aisle to the crossing. The west ossuary, east furnace chapel, and northern crypt each hold a floating gold seal. Defeat nearby guardians before collecting a seal. Once all three are yours, the northern exit shines bright emerald and showers sparks: continue through the crypt to escape.
 
-Red reliquaries restore vitality; ammunition boxes replenish shells or rockets. Each seal restores some vitality. Rockets cause splash damage and can hurt you at close range. The level has 22 guardians, two weapons, health and ammunition pickups, a death/restart loop, and a victory screen.
+Red reliquaries restore vitality; ammunition boxes replenish shells or rockets. Each seal restores some vitality. The level has 26 enemies, two weapons, health and ammunition pickups, a death/restart loop, and a victory screen.
+
+## Bloodfire update — v0.2
+
+- **Darker gothic atmosphere:** weathered masonry, grime, rust, and darker lighting deepen the cathedral's mood.
+- **Bloodfire relics:** find three weapon powerups, with the first available early in the nave. Each grants **25 seconds of fivefold damage** for both weapons, plus **8 shells and 2 rockets**. Switching weapons preserves the effect. Another relic refreshes the timer to 25 seconds; durations do not stack. Pausing freezes the timer, and restarting clears it.
+- **Explosive combat:** empowered weapons have heavier, thunderous reports, and their kills blast enemies into blood, bone, and armor with a visceral impact sound. Empowered rocket splash deals at least 140 damage even at its outer edge. Rockets still hurt you at close range; Bloodfire does not increase that self-damage.
+- **Livelier monsters:** existing enemies move faster with articulated limbs and glowing bodies. Four new Ossuary monsters leap toward you with snarls, roars, and heavy landing impacts.
+- **A clear escape signal:** the gate remains locked until all three guarded seals are collected, then glows emerald, sparkles, and sounds a mystical chime.
 
 All architecture, rune designs, and sound assets are original. The soundtrack is a looping 72-second ambient composition with drones, breath textures, metallic tolls, and distant choir-like tones.
 
@@ -69,10 +77,12 @@ If Command Line Tools are missing, run `xcode-select --install` and finish Apple
 - `Source/main.swift`: macOS window, fullscreen, keyboard, and relative pointer input.
 - `Source/Game.swift`: movement, collision, weapons, enemies, pickups, objectives, and test scenarios.
 - `Source/Entities.swift`: enemy models and enemy state.
+- `Source/Effects.swift`: Bloodfire relics, weapon effects, and blood, bone, and armor fragments.
 - `Source/World.swift`: cathedral geometry, textures, spawn placement, and navigation boundaries.
 - `Source/HUD.swift`: native menus and heads-up display.
 - `Source/Audio.swift`: native audio playback.
 - `Source/Core.swift`: shared map data types.
+- `Source/Validation.swift`: enhancement integration checks and showcase captures.
 - `Resources`: original soundtrack, effects, and app icon.
 
 This is a single-player prototype with one level and primitive-based creature models. Playtime varies with exploration and combat; five minutes is the design target, not a countdown. Human playtesting is still needed to tune trackpad feel and difficulty.
@@ -90,8 +100,13 @@ RELIQUARY_TEST_OUTPUT=/tmp/reliquary-fullscreen.json \
 
 RELIQUARY_TEST_OUTPUT=/tmp/reliquary-playthrough.json \
   'Black Reliquary.app/Contents/MacOS/BlackReliquary' --autoplay-test
+
+RELIQUARY_TEST_OUTPUT=/tmp/reliquary-enhancements.json \
+  'Black Reliquary.app/Contents/MacOS/BlackReliquary' --enhancement-test
 ```
 
 Smoke checks validate Metal, visible native window, movement, ammunition consumption, wall collision, valid spawns, and paths to all objectives. Fullscreen mode additionally checks the native window style. The automated playthrough uses assisted health and ammunition to check the combat/objective/ending sequence; it is not a difficulty benchmark. Render FPS is sampled from SceneKit render callbacks, separately from the simulation timer.
+
+The optional enhancement checks in `Source/Validation.swift` exercise actual gameplay paths: Bloodfire collection, fivefold damage, weapon switching, pause and expiry behavior, shot cooldowns, powered rocket persistence and edge damage, fragment motion, leaper movement and wall clearance, enemy animation, gate unlocking and victory, reset cleanup, and bundled sounds. The report also records relic and leaper counts. These integration checks do not replace playtesting combat feel or difficulty.
 
 `Tools/generate_audio.py` can regenerate the original WAV assets; it requires Python 3 and NumPy. Regeneration is optional and is not part of building or playing the app. See `VALIDATION.md` for the completed checks and their limits.

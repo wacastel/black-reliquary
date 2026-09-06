@@ -7,7 +7,7 @@ extension SCNVector3 {
     var f: SIMD3<Float> { SIMD3(Float(x), Float(y), Float(z)) }
     init(_ f: SIMD3<Float>) { self.init(CGFloat(f.x),CGFloat(f.y),CGFloat(f.z)) }
 }
-struct Missile { var node:SCNNode; var pos:SIMD3<Float>; var velocity:SIMD3<Float>; var life:Float; var hostile:Bool }
+struct Missile { var node:SCNNode; var pos:SIMD3<Float>; var velocity:SIMD3<Float>; var life:Float; var hostile:Bool; var empowered:Bool }
 struct Loot { var node:SCNNode; var pos:SIMD3<Float>; var kind:Int; var collected:Bool=false }
 struct Seal { var node:SCNNode; var pos:SIMD3<Float>; var collected:Bool=false }
 struct GridKey:Hashable { var x:Int; var z:Int }
@@ -17,6 +17,7 @@ final class RenderProbe: NSObject, SCNSceneRendererDelegate {
         lock.lock(); stamps.append(CACurrentMediaTime()); if stamps.count>240 {stamps.removeFirst()}; lock.unlock()
     }
     var framesPerSecond:Double {lock.lock();defer{lock.unlock()};guard stamps.count>10,let a=stamps.first,let b=stamps.last,b>a else{return 0};return Double(stamps.count-1)/(b-a)}
+    func reset() {lock.lock();stamps.removeAll();lock.unlock()}
 }
 
 final class Game {
@@ -28,28 +29,32 @@ final class Game {
     var elapsed:Double=0; var cooldown:Float=0; var recoil:Float=0; var jumpVelocity:Float=0; var height:Float=0
     var damageFlash:Float=0; var hitFlash:Float=0; var message=""; var messageTime:Float=0; var bob:Float=0
     var enemies=[Foe](); var missiles=[Missile](); var loot=[Loot](); var seals=[Seal](); var exitNode=SCNNode()
+    let effectsRoot=SCNNode(); var fragments=[GoreFragment](); var gate:ExitGate!
+    var powerupRemaining:Float=0; var trauma:Float=0; var enhancementTest=false
     var muted=false; var ticks=0; var fps=60; var fpsClock:Double=0; var screenshotTaken=false
     var testMode=false; var autoPlay=false; var testResults=[String:Any](); var lastZone=""; var metricsWritten=false
     var musicStarted=false
     init(view:GameView,hud:HUDView) {
         self.view=view; self.hud=hud
-        testMode=CommandLine.arguments.contains("--smoke-test"); autoPlay=CommandLine.arguments.contains("--autoplay-test")
+        enhancementTest=CommandLine.arguments.contains("--enhancement-test")
+        testMode=CommandLine.arguments.contains("--smoke-test") || enhancementTest; autoPlay=CommandLine.arguments.contains("--autoplay-test")
         view.game=self; view.scene=scene; view.pointOfView=camera; view.preferredFramesPerSecond=60
         view.delegate=renderProbe;view.antialiasingMode = .multisampling2X; view.isPlaying=true; view.rendersContinuously=true
-        scene.background.contents=color(0.018,0.025,0.035)
-        scene.fogColor=color(0.023,0.032,0.04); scene.fogStartDistance=19; scene.fogEndDistance=65
-        scene.lightingEnvironment.intensity=0.65
-        let ambient=SCNNode(); ambient.light=SCNLight(); ambient.light!.type = .ambient; ambient.light!.color=color(0.37,0.40,0.47); ambient.light!.intensity=420; scene.rootNode.addChildNode(ambient)
-        let moon=SCNNode(); moon.light=SCNLight(); moon.light!.type = .directional; moon.light!.color=color(0.36,0.48,0.68); moon.light!.intensity=420; moon.eulerAngles=SCNVector3(-0.8,-0.6,0); scene.rootNode.addChildNode(moon)
+        scene.background.contents=color(0.009,0.011,0.01)
+        scene.fogColor=color(0.018,0.021,0.017); scene.fogStartDistance=15; scene.fogEndDistance=49
+        scene.lightingEnvironment.intensity=0.4
+        let ambient=SCNNode(); ambient.light=SCNLight(); ambient.light!.type = .ambient; ambient.light!.color=color(0.39,0.36,0.30); ambient.light!.intensity=260; scene.rootNode.addChildNode(ambient)
+        let moon=SCNNode(); moon.light=SCNLight(); moon.light!.type = .directional; moon.light!.color=color(0.33,0.4,0.46); moon.light!.intensity=290; moon.eulerAngles=SCNVector3(-0.8,-0.6,0); scene.rootNode.addChildNode(moon)
         camera.camera=SCNCamera(); camera.camera!.fieldOfView=80; camera.camera!.zNear=0.045; camera.camera!.zFar=120
-        camera.camera!.wantsHDR=true; camera.camera!.exposureOffset=0.35; camera.camera!.averageGray=0.22
-        camera.camera!.bloomIntensity=0.35; camera.camera!.bloomThreshold=0.85; camera.camera!.bloomBlurRadius=5
+        camera.camera!.wantsHDR=true; camera.camera!.exposureOffset=0.12; camera.camera!.averageGray=0.2
+        camera.camera!.bloomIntensity=0.55; camera.camera!.bloomThreshold=0.8; camera.camera!.bloomBlurRadius=6
         camera.camera!.vignettingIntensity=0.65; camera.camera!.vignettingPower=0.7
         cameraRig.addChildNode(camera); scene.rootNode.addChildNode(cameraRig); camera.addChildNode(weaponRoot)
         let lamp=SCNNode(); lamp.light=SCNLight(); lamp.light!.type = .omni; lamp.light!.color=color(0.64,0.71,0.77); lamp.light!.intensity=90
         lamp.light!.attenuationStartDistance=0; lamp.light!.attenuationEndDistance=9; lamp.position=SCNVector3(0,0.5,0); camera.addChildNode(lamp)
         muzzleLight.type = .omni; muzzleLight.color=color(1,0.6,0.22); muzzleLight.intensity=0; muzzleLight.attenuationEndDistance=8
         muzzle.light=muzzleLight; camera.addChildNode(muzzle); muzzle.position=SCNVector3(0.25,-0.22,-0.7)
+        effectsRoot.categoryBitMask=4; scene.rootNode.addChildNode(effectsRoot)
         reset(); setMode("menu"); last=CACurrentMediaTime()
         timer=Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer!,forMode:.common)
@@ -60,9 +65,11 @@ final class Game {
         world=buildWorld(); scene.rootNode.addChildNode(world.root); position=world.spawn.f; yaw=0; pitch=0
         health=100; shells=42; rockets=10; weapon=0; kills=0; elapsed=0; height=0; jumpVelocity=0; cooldown=0; recoil=0
         damageFlash=0; hitFlash=0; messageTime=0; keys.removeAll(); mouseHeld=false; enemies=[]; loot=[]; seals=[]; missiles=[]
+        effectsRoot.childNodes.forEach{$0.removeFromParentNode()}; fragments=[]; powerupRemaining=0; trauma=0
+        autoIndex=0; autoRoute=[]; autoNext=0; autoClock=0; lastZone=""
         for spawn in world.enemies { let foe=Foe(spawn:spawn); enemies.append(foe); scene.rootNode.addChildNode(foe.node) }
         for p in world.pickups {
-            let node=makeLoot(p.kind); node.position=v3(p.x,0.48,p.z); scene.rootNode.addChildNode(node)
+            let node=makeLoot(p.kind); node.position=v3(p.x,p.kind==3 ? 1.05:0.48,p.z); scene.rootNode.addChildNode(node)
             loot.append(Loot(node:node,pos:SIMD3(p.x,0,p.z),kind:p.kind))
         }
         for (i,p) in world.sigils.enumerated() {
@@ -72,11 +79,11 @@ final class Game {
             let core=SCNSphere(radius:0.12);core.materials=[simpleMaterial(color(0.5,0.92,1),emission:color(0.5,0.92,1))];n.addChildNode(SCNNode(geometry:core))
             n.position=v3(Float(p.x),1.35,Float(p.z)); n.name="seal\(i)";n.categoryBitMask=4;scene.rootNode.addChildNode(n);seals.append(Seal(node:n,pos:p.f))
         }
-        exitNode=SCNNode(); let gate=SCNTorus(ringRadius:1.5,pipeRadius:0.11);gate.materials=[simpleMaterial(color(0.1,0.25,0.27),emission:color(0.03,0.12,0.14))]
-        let ring=SCNNode(geometry:gate);ring.eulerAngles.x = .pi/2;exitNode.addChildNode(ring);exitNode.position=world.exit;exitNode.position.y=1.8;scene.rootNode.addChildNode(exitNode)
+        gate=ExitGate(); exitNode=gate.node; exitNode.position=world.exit; exitNode.position.y=1.8; scene.rootNode.addChildNode(exitNode)
         makeWeapon(); updateCamera(); refreshHUD()
     }
     func makeLoot(_ kind:Int)->SCNNode {
+        if kind==3 {return makeBloodfireRelic()}
         let n=SCNNode();let c=kind==0 ? color(0.43,0.1,0.075):(kind==1 ? color(0.48,0.34,0.13):color(0.12,0.35,0.38))
         let box=SCNBox(width:0.48,height:0.35,length:0.4,chamferRadius:0.04);box.materials=[simpleMaterial(c)];n.addChildNode(SCNNode(geometry:box))
         let glow=simpleMaterial(color(0.92,0.75,0.42),emission:color(0.35,0.2,0.08))
@@ -108,6 +115,7 @@ final class Game {
         }
         _=part(SCNCapsule(capRadius:0.052,height:0.21),SCNVector3(0.09,-0.12,0.26),simpleMaterial(color(0.3,0.20,0.14)))
         weaponRoot.scale=SCNVector3(0.8,0.8,0.8);weaponRoot.position=SCNVector3(0.21,-0.26,-0.52)
+        addWeaponRunes()
     }
     var forward:SIMD3<Float>{SIMD3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))}
     var sealCount:Int {seals.filter{$0.collected}.count}
@@ -156,47 +164,85 @@ final class Game {
     }
     func shoot() {
         guard cooldown<=0 else{return}
-        if (weapon==0 && shells<=0)||(weapon==1 && rockets<=0){cooldown=0.4;announce("OUT OF AMMO · PRESS \(weapon==0 ? "2":"1") TO SWITCH");return}
-        recoil=1;cooldown=weapon==0 ? 0.64:0.82;muzzleLight.intensity=1000
+        if (weapon==0 && shells<=0)||(weapon==1 && rockets<=0) {
+            cooldown=0.4; announce("OUT OF AMMO · PRESS \(weapon==0 ? "2":"1") TO SWITCH"); return
+        }
+        let powered=empowered
+        recoil=powered ? 1.4:1; cooldown=weapon==0 ? 0.64:0.82
+        muzzleLight.color=powered ? color(1,0.19,0.025):color(1,0.6,0.22)
+        muzzleLight.intensity=powered ? 1550:1000; trauma=max(trauma,powered ? 0.25:0.07)
         if weapon==0 {
-            shells -= 1;audio.play("shotgun")
+            shells-=1; audio.play(powered ? "empowered_shot":"shotgun")
             for e in enemies where e.health>0 {
-                let aim=e.position+SIMD3(0,e.kind==0 ? 1.3:1.7,0)-position;let dist=simd_length(aim);let dot=simd_dot(simd_normalize(aim),forward)
+                let aim=enemyCenter(e)-position; let dist=simd_length(aim)
+                guard dist>0.001 else {continue}
+                let dot=simd_dot(simd_normalize(aim),forward)
                 let tolerance:Float=0.07+0.5/max(1,dist)
-                if dot>cos(tolerance) && dist<27 && canSee(position,e.position) {let amount:Float=dist<8 ? 64:(dist<17 ? 44:27);hurtEnemy(e,amount:amount);hitFlash=0.16}
+                if dot>cos(tolerance) && dist<27 && canSee(position,e.position) {
+                    let amount:Float=dist<8 ? 64:(dist<17 ? 44:27)
+                    hurtEnemy(e,amount:amount*weaponDamageMultiplier,empowered:powered,direction:forward)
+                    hitFlash=0.2
+                }
             }
-            let end=position+forward*22;let opts:[SCNHitTestOption:Any]=[.categoryBitMask:1,.ignoreHiddenNodes:true,.searchMode:SCNHitTestSearchMode.closest.rawValue]
+            let end=position+forward*22
+            let opts:[SCNHitTestOption:Any]=[.categoryBitMask:1,.ignoreHiddenNodes:true,.searchMode:SCNHitTestSearchMode.closest.rawValue]
             let hits=scene.rootNode.hitTestWithSegment(from:SCNVector3(position),to:SCNVector3(end),options:Dictionary(uniqueKeysWithValues:opts.map { ($0.key.rawValue,$0.value) }))
-            if let h=hits.first {spark(at:h.worldCoordinates.f,c:color(1,0.64,0.24),count:7)}
-        } else {rockets -= 1;audio.play("rocket");spawnMissile(at:position+forward*0.7+SIMD3(0,-0.1,0),velocity:forward*24,hostile:false)}
+            if let h=hits.first {spark(at:h.worldCoordinates.f,c:powered ? color(1,0.2,0.02):color(1,0.64,0.24),count:powered ? 25:7)}
+        } else {
+            rockets-=1; audio.play(powered ? "empowered_rocket":"rocket")
+            spawnMissile(at:position+forward*0.7+SIMD3(0,-0.1,0),velocity:forward*24,hostile:false,empowered:powered)
+        }
     }
-    func hurtEnemy(_ e:Foe,amount:Float) {
-        e.health -= amount;e.active=true;e.flash=0.12
-        spark(at:e.position+SIMD3(0,1.2,0),c:color(0.58,0.13,0.05),count:5)
-        if e.health<=0 {kills += 1;audio.play("enemy");e.node.runAction(.sequence([.group([.fadeOut(duration:0.4),.scale(to:0.08,duration:0.4),.rotateBy(x:0,y:0,z:1.3,duration:0.4)]),.removeFromParentNode()]))}
+    func hurtEnemy(_ e:Foe,amount:Float,empowered powered:Bool=false,direction:SIMD3<Float> = .zero) {
+        guard e.health>0 else {return}
+        e.health-=amount; e.active=true; e.flash=0.18
+        if e.health<=0 {
+            kills+=1
+            if powered {burstEnemy(e,direction:direction)}
+            else {
+                audio.play("enemy"); spark(at:enemyCenter(e),c:color(0.48,0.06,0.02),count:9)
+                e.node.runAction(.sequence([.group([.fadeOut(duration:0.5),.rotateBy(x:1.3,y:0,z:0.4,duration:0.45),.moveBy(x:0,y:-0.6,z:0,duration:0.5)]),.removeFromParentNode()]))
+            }
+        } else {spark(at:enemyCenter(e),c:color(0.55,0.045,0.02),count:powered ? 18:5)}
     }
     func damage(_ amount:Float) {guard mode=="playing" else{return};health=max(0,health-amount);damageFlash=0.7;audio.play("hurt");if health<=0 {setMode("dead")}}
-    func spawnMissile(at p:SIMD3<Float>,velocity:SIMD3<Float>,hostile:Bool) {
-        let c=hostile ? color(0.08,0.7,0.9):color(1,0.43,0.1);let geo=SCNSphere(radius:hostile ? 0.17:0.09);geo.segmentCount=8;geo.materials=[simpleMaterial(c,emission:c)]
-        let n=SCNNode(geometry:geo);n.position=SCNVector3(p);n.categoryBitMask=4;scene.rootNode.addChildNode(n)
-        missiles.append(Missile(node:n,pos:p,velocity:velocity,life:5,hostile:hostile))
+    func spawnMissile(at p:SIMD3<Float>,velocity:SIMD3<Float>,hostile:Bool,empowered powered:Bool=false) {
+        let c=hostile ? color(0.08,0.7,0.9):(powered ? color(1,0.11,0.015):color(1,0.43,0.1))
+        let geo=SCNSphere(radius:hostile ? 0.17:(powered ? 0.16:0.09)); geo.segmentCount=8; geo.materials=[simpleMaterial(c,emission:c)]
+        let n=SCNNode(geometry:geo); n.position=SCNVector3(p); n.categoryBitMask=4; effectsRoot.addChildNode(n)
+        if powered {
+            let trail=SCNParticleSystem(); trail.birthRate=65; trail.particleLifeSpan=0.23; trail.particleSize=0.055
+            trail.particleColor=c; trail.blendMode = .additive; trail.isLightingEnabled=false; n.addParticleSystem(trail)
+        }
+        missiles.append(Missile(node:n,pos:p,velocity:velocity,life:5,hostile:hostile,empowered:powered))
     }
     func spark(at p:SIMD3<Float>,c:NSColor,count:Int) {
-        let root=SCNNode();root.position=SCNVector3(p);root.categoryBitMask=4;scene.rootNode.addChildNode(root)
+        let root=SCNNode();root.position=SCNVector3(p);root.categoryBitMask=4;effectsRoot.addChildNode(root)
         let particles=SCNParticleSystem();particles.birthRate=0;particles.particleLifeSpan=0.25;particles.particleLifeSpanVariation=0.14;particles.emissionDuration=0.04;particles.loops=false;particles.birthRate=CGFloat(count)*25;particles.particleSize=0.055;particles.particleColor=c;particles.spreadingAngle=180;particles.particleVelocity=2.5;particles.particleVelocityVariation=1.5;particles.acceleration=SCNVector3(0,-5,0);particles.blendMode = .additive;particles.isLightingEnabled=false;root.addParticleSystem(particles);root.runAction(.sequence([.wait(duration:0.7),.removeFromParentNode()]))
     }
-    func explode(_ p:SIMD3<Float>) {
-        audio.play("explosion");spark(at:p,c:color(1,0.4,0.1),count:45)
-        let g=SCNSphere(radius:0.25);g.materials=[simpleMaterial(color(1,0.5,0.15),emission:color(1,0.32,0.03))];let n=SCNNode(geometry:g);n.categoryBitMask=4;n.position=SCNVector3(p);scene.rootNode.addChildNode(n)
-        n.runAction(.sequence([.group([.scale(to:5,duration:0.23),.fadeOut(duration:0.23)]),.removeFromParentNode()]))
-        for e in enemies where e.health>0 {let dist=simd_distance(e.position+SIMD3(0,1,0),p);if dist<5.5 && canSee(p,e.position) {hurtEnemy(e,amount:125*(1-dist/6.5));hitFlash=0.2}}
-        let dist=simd_distance(position,p);if dist<3.5 {damage(24*(1-dist/3.5));if dist<2.8 {jumpVelocity=max(jumpVelocity,5.5)}}
+    func explode(_ p:SIMD3<Float>,empowered powered:Bool=false) {
+        audio.play("explosion"); spark(at:p,c:powered ? color(1,0.16,0.025):color(1,0.4,0.1),count:powered ? 85:45)
+        let g=SCNSphere(radius:0.25); g.segmentCount=12
+        g.materials=[simpleMaterial(color(1,0.4,0.08),emission:color(1,0.22,0.015))]
+        let n=SCNNode(geometry:g); n.categoryBitMask=4; n.position=SCNVector3(p); effectsRoot.addChildNode(n)
+        n.runAction(.sequence([.group([.scale(to:powered ? 8:5,duration:0.23),.fadeOut(duration:0.23)]),.removeFromParentNode()]))
+        for e in enemies where e.health>0 {
+            let dist=simd_distance(enemyCenter(e),p)
+            if dist<5.5 && canSee(p,e.position) {
+                let blast=125*(1-dist/6.5)
+                hurtEnemy(e,amount:powered ? max(140,blast*5):blast,empowered:powered,direction:enemyCenter(e)-p); hitFlash=0.2
+            }
+        }
+        let dist=simd_distance(position,p)
+        trauma=max(trauma,(powered ? 0.5:0.3)*(1-min(1,dist/18)))
+        if dist<3.5 && canSee(p,position) {damage(24*(1-dist/3.5));if dist<2.8 {jumpVelocity=max(jumpVelocity,5.5)}}
     }
     func tick() {
         let now=CACurrentMediaTime();let dt=Float(min(0.04,now-last));last=now;ticks += 1;fpsClock += Double(dt)
         if fpsClock>=1 {fps=Int(Double(ticks)/fpsClock);ticks=0;fpsClock=0}
         SCNTransaction.begin();SCNTransaction.animationDuration=0
         if mode=="playing" {
+            updatePowerup(dt); trauma=max(0,trauma-dt*1.8); updateFragments(dt)
             elapsed += Double(dt);cooldown=max(0,cooldown-dt);recoil=max(0,recoil-dt*6);damageFlash=max(0,damageFlash-dt);hitFlash=max(0,hitFlash-dt);messageTime=max(0,messageTime-dt)
             if !autoPlay {
                 let x:Float=(keys.contains(2) ? 1:0)-(keys.contains(0) ? 1:0);let z:Float=(keys.contains(13) ? 1:0)-(keys.contains(1) ? 1:0)
@@ -210,43 +256,88 @@ final class Game {
             if autoPlay {runAutoplay(dt)}
             let zone=world.zones.first(where:{$0.rect.contains(position.x,position.z)})?.name ?? "The Passage"
             if zone != lastZone {lastZone=zone}
-            if mode=="playing" && sealCount==3 {
-                exitNode.eulerAngles.z += CGFloat(dt)*0.25
+            gate.update(sealCount:sealCount,time:elapsed)
+            if mode=="playing" && gate.isOpen {
                 if simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<2.1 {setMode("won");audio.play("win")}
             }
             updateCamera()
         } else if mode=="menu" {cameraRig.position=world.spawn;cameraRig.eulerAngles.y=CGFloat(sin(now*0.07)*0.13);camera.eulerAngles.x=0.09}
         muzzleLight.intensity=max(0,muzzleLight.intensity-CGFloat(dt)*7000)
         for (i,s) in seals.enumerated() where !s.collected {s.node.eulerAngles.y=CGFloat(now)*0.6;s.node.position.y=1.35+CGFloat(sin(now*1.7+Double(i)))*0.13}
-        for l in loot where !l.collected {l.node.eulerAngles.y=CGFloat(now)*0.5}
+        for l in loot where !l.collected {l.node.eulerAngles.y=CGFloat(now)*0.5;if l.kind==3 {l.node.position.y=1.05+CGFloat(sin(now*2.1))*0.12}}
         SCNTransaction.commit();refreshHUD()
         if testMode && elapsed>4 && !screenshotTaken {runSmokeTests();screenshotTaken=true}
         if autoPlay && mode=="won" && !metricsWritten {writeMetrics(["autoplayWon":true,"seconds":elapsed,"kills":kills,"seals":sealCount,"health":health,"renderFPSObserved":renderProbe.framesPerSecond]);metricsWritten=true;DispatchQueue.main.asyncAfter(deadline:.now()+1){NSApp.terminate(nil)}}
     }
-    func updateCamera(){cameraRig.position=SCNVector3(position);cameraRig.eulerAngles.y=CGFloat(yaw);camera.eulerAngles.x=CGFloat(pitch);weaponRoot.position=SCNVector3(0.21+CGFloat(sin(bob))*0.007,-0.26+CGFloat(abs(cos(bob)))*0.009-CGFloat(recoil)*0.045,-0.52+CGFloat(recoil)*0.13);weaponRoot.eulerAngles.x=CGFloat(recoil)*0.11}
+    func updateCamera() {
+        cameraRig.position=SCNVector3(position); cameraRig.eulerAngles.y=CGFloat(yaw)
+        let shake=trauma*trauma
+        camera.position=v3(sin(Float(elapsed)*61)*shake*0.11,cos(Float(elapsed)*73)*shake*0.08,0)
+        camera.eulerAngles=SCNVector3(CGFloat(pitch),0,CGFloat(sin(Float(elapsed)*47)*shake*0.018))
+        weaponRoot.position=SCNVector3(0.21+CGFloat(sin(bob))*0.007,-0.26+CGFloat(abs(cos(bob)))*0.009-CGFloat(recoil)*0.045,-0.52+CGFloat(recoil)*0.13)
+        weaponRoot.eulerAngles.x=CGFloat(recoil)*0.11
+    }
     func updateEnemies(_ dt:Float) {
+        let litFoes=Set(enemies.filter{$0.health>0 && simd_distance($0.position,position)<12}.sorted{simd_distance($0.position,position)<simd_distance($1.position,position)}.prefix(4).map{ObjectIdentifier($0)})
         for e in enemies where e.health>0 {
-            let dist=simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z));let visible=dist<24 && canSee(e.position,position)
-            if (dist<15 && visible) || dist<5 {e.active=true}
-            e.cooldown -= dt;e.repath -= dt;e.flash=max(0,e.flash-dt)
+            let before=e.position
+            let dist=simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z))
+            let visible=dist<24 && canSee(e.position,position)
+            if (dist<15 && visible) || dist<5 {
+                if !e.active && e.kind==2 {audio.play("monster_roar")}
+                e.active=true
+            }
+            e.cooldown-=dt; e.repath-=dt; e.flash=max(0,e.flash-dt); e.leapCooldown-=dt
             if e.active {
-                var delta=position-e.position;delta.y=0
+                var delta=position-e.position; delta.y=0
                 if simd_length(delta)>0.01 {e.node.eulerAngles.y=CGFloat(atan2(-delta.x,-delta.z))}
-                if dist>1.55 && (e.kind==0 || dist>8 || !visible) {
-                    var target=position
-                    if !visible {if e.repath<=0 {e.route=path(from:e.position,to:position);e.repath=1.1};if let first=e.route.first {target=SIMD3(first.x,0,first.y);if simd_length(SIMD2(target.x-e.position.x,target.z-e.position.z))<0.5 {e.route.removeFirst()}}}
-                    var dir=target-e.position;dir.y=0
-                    if simd_length(dir)>0.05 {dir=simd_normalize(dir);var sep=SIMD3<Float>.zero;for other in enemies where other !== e && other.health>0 {var d=e.position-other.position;d.y=0;let len=simd_length(d);if len<0.85 && len>0.01 {sep += d/len*(0.85-len)*2}}
-                        e.position=move(e.position,by:(dir*(e.kind==0 ? 2.5:1.8)+sep)*dt,radius:0.4)
+                if e.kind==2 && e.leapRemaining<=0 && e.leapCooldown<=0 && visible && dist>2.5 && dist<10 {
+                    e.leapDirection=simd_normalize(delta); e.leapRemaining=0.78; e.leapCooldown=2.6
+                    e.attackAnimation=0.55; audio.play("monster_leap")
+                }
+                if e.leapRemaining>0 {
+                    e.leapRemaining=max(0,e.leapRemaining-dt)
+                    e.position=move(e.position,by:e.leapDirection*9.5*dt,radius:0.4)
+                    e.leapHeight=sin((1-e.leapRemaining/0.78) * .pi)*2.25
+                    if e.leapRemaining==0 {
+                        e.leapHeight=0; e.cooldown=0.65; audio.play("monster_land")
+                        spark(at:e.position+SIMD3(0,0.15,0),c:color(0.36,0.43,0.13),count:12)
+                        if simd_distance(SIMD2(position.x,position.z),SIMD2(e.position.x,e.position.z))<2.4 && height<1 && canSee(e.position,position) {damage(19)}
+                    }
+                } else {
+                    if dist>1.55 && (e.kind != 1 || dist>8 || !visible) {
+                        var target=position
+                        if !visible {
+                            if e.repath<=0 {e.route=path(from:e.position,to:position);e.repath=1.1}
+                            if let first=e.route.first {target=SIMD3(first.x,0,first.y);if simd_length(SIMD2(target.x-e.position.x,target.z-e.position.z))<0.5 {e.route.removeFirst()}}
+                        }
+                        var dir=target-e.position; dir.y=0
+                        if simd_length(dir)>0.05 {
+                            dir=simd_normalize(dir); var sep=SIMD3<Float>.zero
+                            for other in enemies where other !== e && other.health>0 {
+                                var d=e.position-other.position; d.y=0; let len=simd_length(d)
+                                if len<0.85 && len>0.01 {sep+=d/len*(0.85-len)*2}
+                            }
+                            let speed:Float=e.kind==0 ? 3.25:(e.kind==1 ? 2.5:3.8)
+                            e.position=move(e.position,by:(dir*speed+sep)*dt,radius:0.4)
+                        }
+                    } else if e.kind==1 && visible && dist>3 {
+                        let side=SIMD3<Float>(cos(Float(elapsed)*1.6+e.home.x),0,sin(Float(elapsed)*1.1+e.home.z))
+                        e.position=move(e.position,by:side*1.3*dt,radius:0.4)
+                    }
+                    if e.cooldown<=0 && visible {
+                        if e.kind != 1 && dist<1.95 && height<1.2 {
+                            damage(e.kind==2 ? 15:12); e.cooldown=e.kind==2 ? 0.8:0.95; e.attackAnimation=0.55
+                        } else if e.kind==1 && dist<23 {
+                            let origin=enemyCenter(e); spawnMissile(at:origin,velocity:simd_normalize(position-origin)*7,hostile:true)
+                            e.cooldown=2.2; e.attackAnimation=0.55
+                        }
                     }
                 }
-                if e.cooldown<=0 && visible {
-                    if e.kind==0 && dist<1.9 && height<1.2 {damage(12);e.cooldown=0.95;e.left.runAction(.sequence([.rotateTo(x:-1.4,y:0,z:0,duration:0.1),.rotateTo(x:0,y:0,z:0,duration:0.25)]))}
-                    else if e.kind==1 && dist<23 {let origin=e.position+SIMD3(0,1.65,0);spawnMissile(at:origin,velocity:simd_normalize(position-origin)*7,hostile:true);e.cooldown=2.2}
-                }
             }
-            e.node.position=SCNVector3(e.position);e.body.position.y=e.kind==1 ? CGFloat(0.35+sin(elapsed*2+Double(e.home.x))*0.13):0
-            if e.active && e.kind==0 {e.body.eulerAngles.z=CGFloat(sin(elapsed*8))*0.035;e.right.eulerAngles.x=CGFloat(sin(elapsed*8))*0.3}
+            e.node.position=SCNVector3(e.position+SIMD3(0,e.leapHeight,0))
+            e.animate(time:elapsed,delta:dt,moving:simd_distance(e.position,before)>0.003)
+            if !litFoes.contains(ObjectIdentifier(e)) {e.auraLight.intensity=0}
         }
     }
     func updateMissiles(_ dt:Float) {
@@ -254,8 +345,8 @@ final class Game {
             var m=missiles[i];m.life -= dt;let old=m.pos;m.pos += m.velocity*dt
             var impact = !canSee(old,m.pos) || m.pos.y<0.1 || m.pos.y>9 || m.life<=0
             if m.hostile {if simd_distance(m.pos,position)<0.6 {damage(16);impact=true}}
-            else {for e in enemies where e.health>0 {if simd_distance(m.pos,e.position+SIMD3(0,e.kind==0 ? 1.1:1.6,0))<0.85 {impact=true;break}}}
-            if impact {m.node.removeFromParentNode();missiles.remove(at:i);if !m.hostile {explode(old)} else {spark(at:old,c:color(0.1,0.65,0.9),count:7)}}
+            else {for e in enemies where e.health>0 {if simd_distance(m.pos,enemyCenter(e))<0.85 {impact=true;break}}}
+            if impact {m.node.removeFromParentNode();missiles.remove(at:i);if !m.hostile {explode(old,empowered:m.empowered)} else {spark(at:old,c:color(0.1,0.65,0.9),count:7)}}
             else {m.node.position=SCNVector3(m.pos);missiles[i]=m}
         }
     }
@@ -263,8 +354,8 @@ final class Game {
         for i in loot.indices where !loot[i].collected {
             if simd_length(SIMD2(position.x-loot[i].pos.x,position.z-loot[i].pos.z))<1.15 {
                 if loot[i].kind==0 && health>=100 {continue}
-                switch loot[i].kind {case 0:health=min(100,health+35);announce("VITALITY RESTORED · +35");case 1:shells += 14;announce("+14 IRON SHELLS");default:rockets += 5;announce("+5 CINDER ROCKETS")}
-                loot[i].collected=true;loot[i].node.removeFromParentNode();audio.play("pickup")
+                switch loot[i].kind {case 0:health=min(100,health+35);announce("VITALITY RESTORED · +35");case 1:shells += 14;announce("+14 IRON SHELLS");case 2:rockets += 5;announce("+5 CINDER ROCKETS");case 3:activatePowerup();default:break}
+                loot[i].collected=true;loot[i].node.removeFromParentNode();if loot[i].kind != 3 {audio.play("pickup")}
             }
         }
         for i in seals.indices where !seals[i].collected {
@@ -272,14 +363,14 @@ final class Game {
                 let guards=enemies.contains{$0.health>0 && simd_distance(SIMD2($0.position.x,$0.position.z),SIMD2(seals[i].pos.x,seals[i].pos.z))<10}
                 if guards {if messageTime<0.2 {announce("THE SEAL IS BOUND · SLAY ITS GUARDIANS",for:2)};continue}
                 seals[i].collected=true;seals[i].node.removeFromParentNode();health=min(100,health+20);audio.play("seal")
-                if sealCount==3 {announce("THREE SEALS CLAIMED · REACH THE NORTHERN GATE",for:6);exitNode.childNodes.first?.geometry?.firstMaterial?.emission.contents=color(0.15,0.9,0.9)}
+                if sealCount==3 {announce("THE GATE IS OPEN · FOLLOW ITS EMERALD LIGHT",for:6);if gate.unlock() {audio.play("gate_open");spark(at:world.exit.f+SIMD3(0,1.8,0),c:color(0.3,1,0.6),count:90)}}
                 else {announce("SEAL \(sealCount) OF 3 · +20 VITALITY",for:4)}
             }
         }
         if sealCount<3 && simd_distance(SIMD2(position.x,position.z),SIMD2(Float(world.exit.x),Float(world.exit.z)))<3 && messageTime<0.2 {announce("THE GATE DEMANDS THREE SEALS",for:3)}
     }
     func refreshHUD() {
-        var s=HUDState();s.mode=mode;s.health=Int(ceil(health));s.shells=shells;s.rockets=rockets;s.weapon=weapon;s.seals=sealCount;s.kills=kills;s.totalEnemies=enemies.count;s.elapsed=elapsed;s.location=lastZone.isEmpty ? "The Narthex":lastZone;s.message=message;s.messageAlpha=CGFloat(min(1,messageTime));s.damage=CGFloat(damageFlash);s.hit=CGFloat(hitFlash>0 ? 1:0);s.fps=Int(renderProbe.framesPerSecond.rounded());s.sensitivity=Double(sensitivity);s.muted=muted;hud.state=s
+        var s=HUDState();s.mode=mode;s.health=Int(ceil(health));s.shells=shells;s.rockets=rockets;s.weapon=weapon;s.seals=sealCount;s.kills=kills;s.totalEnemies=enemies.count;s.elapsed=elapsed;s.location=lastZone.isEmpty ? "The Narthex":lastZone;s.message=message;s.messageAlpha=CGFloat(min(1,messageTime));s.damage=CGFloat(damageFlash);s.hit=CGFloat(hitFlash>0 ? 1:0);s.fps=Int(renderProbe.framesPerSecond.rounded());s.sensitivity=Double(sensitivity);s.muted=muted;s.powerupRemaining=Double(powerupRemaining);s.gateOpen=gate?.isOpen ?? false;hud.state=s
     }
     func writeMetrics(_ values:[String:Any]) {
         let path=ProcessInfo.processInfo.environment["RELIQUARY_TEST_OUTPUT"] ?? "/tmp/reliquary-test.json"
@@ -294,7 +385,9 @@ final class Game {
         let before=position;position=move(position,by:SIMD3(0,0,-1));result["movementWorks"]=simd_distance(before,position)>0.8;position=before
         let oldShells=shells;shoot();result["shootConsumesAmmo"]=shells==oldShells-1
         result["windowVisible"]=view.window?.isVisible ?? false;result["nativeView"]=true;result["renderFPSObserved"]=renderProbe.framesPerSecond;result["simulationTicksPerSecond"]=fps;result["fullscreen"]=view.window?.styleMask.contains(.fullScreen) ?? false
+        if enhancementTest {result.merge(runEnhancementTests()){_,new in new}}
         writeMetrics(result)
+        if let directory=ProcessInfo.processInfo.environment["RELIQUARY_SHOWCASE_DIR"] {captureShowcase(in:directory);return}
         if let path=ProcessInfo.processInfo.environment["RELIQUARY_SCREENSHOT"] {let image=view.snapshot();if let data=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:data),let png=bitmap.representation(using:.png,properties:[:]) {try? png.write(to:URL(fileURLWithPath:path))}}
         if let path=ProcessInfo.processInfo.environment["RELIQUARY_PLAY_SCREENSHOT"] {refreshHUD();savePreview(path)}
         reset();setMode("menu")
@@ -314,7 +407,7 @@ final class Game {
         let targets=world.sigils.map{$0.f}+[world.exit.f]
         if autoIndex>=targets.count{return}
         let nearby=enemies.filter{$0.health>0 && simd_distance($0.position,position)<19 && canSee(position,$0.position)}.min{simd_distance($0.position,position)<simd_distance($1.position,position)}
-        if let e=nearby {let delta=e.position+SIMD3(0,e.kind==0 ? 1.3:1.7,0)-position;yaw=atan2(-delta.x,-delta.z);pitch=atan2(delta.y,hypot(delta.x,delta.z));shells=max(shells,10);weapon=0;shoot()}
+        if let e=nearby {let delta=enemyCenter(e)-position;yaw=atan2(-delta.x,-delta.z);pitch=atan2(delta.y,hypot(delta.x,delta.z));shells=max(shells,10);weapon=0;shoot()}
         else {
             let t=targets[autoIndex];if autoNext<=0 {autoRoute=path(from:position,to:t);autoNext=1};autoNext -= dt
             var next=t;if let p=autoRoute.first {next=SIMD3(p.x,1.65,p.y);if simd_distance(SIMD2(position.x,position.z),p)<0.35 {autoRoute.removeFirst()}}

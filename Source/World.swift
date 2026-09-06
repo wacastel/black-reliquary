@@ -5,44 +5,88 @@ private func worldStoneTexture(floor: Bool = false) -> NSImage {
     let side = 512
     let image = NSImage(size: NSSize(width: side, height: side))
     image.lockFocus()
-    NSColor(calibratedWhite: floor ? 0.17 : 0.12, alpha: 1).setFill()
-    NSBezierPath(rect: NSRect(x: 0, y: 0, width: side, height: side)).fill()
-    let rows = floor ? 8 : 8
-    let cellW = floor ? 128 : 128
-    let cellH = side / rows
-    for row in 0..<rows {
-        let offset = row % 2 == 0 ? 0 : -cellW/2
-        for col in 0..<6 {
-            let seed = (row * 91 + col * 47 + 17) % 103
-            let base = (floor ? 0.34 : 0.38) + CGFloat(seed) / 103 * 0.12
-            NSColor(calibratedRed: base * 0.93, green: base * 0.94, blue: base * 0.90, alpha: 1).setFill()
-            let rect = NSRect(x: offset + col * cellW + 2, y: row * cellH + 2, width: cellW-4, height: cellH-4)
-            NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
-            NSColor(calibratedWhite: base + 0.065, alpha: 0.5).setStroke()
-            let edge = NSBezierPath(); edge.move(to: NSPoint(x: rect.minX+1, y: rect.maxY-2)); edge.line(to: NSPoint(x: rect.maxX-1, y: rect.maxY-2)); edge.lineWidth = 1; edge.stroke()
-            for n in 0..<20 {
-                let xx = rect.minX + CGFloat((seed * 13 + n * 31) % (cellW-8))
-                let yy = rect.minY + CGFloat((seed * 23 + n * 17) % (cellH-8))
-                NSColor(calibratedWhite: n % 3 == 0 ? 0.7 : 0.12, alpha: 0.07).setFill()
-                NSBezierPath(rect: NSRect(x: xx, y: yy, width: CGFloat(2+n%5), height: 1)).fill()
-            }
-        }
-    }
-    // Deterministic grain and mineral stains keep large surfaces from looking sterile.
+    // Baked chips, mineral veins and soot add wear without more geometry or shaders.
     var randomState: UInt32 = floor ? 7919 : 15427
     func random() -> CGFloat {
         randomState = randomState &* 1664525 &+ 1013904223
         return CGFloat(randomState & 0x00ffffff) / CGFloat(0x00ffffff)
     }
+    NSColor(calibratedRed: 0.07, green: 0.062, blue: 0.046, alpha: 1).setFill()
+    NSBezierPath(rect: NSRect(x: 0, y: 0, width: side, height: side)).fill()
+    let rows = floor ? 4 : 8
+    let cellW = 128, cellH = side / rows
+    for row in 0..<rows {
+        let offset = row % 2 == 0 ? 0 : -cellW/2
+        for col in 0..<6 {
+            let base = (floor ? 0.26 : 0.29) + random() * 0.15
+            NSColor(calibratedRed: base * 1.04, green: base * 0.94, blue: base * 0.77, alpha: 1).setFill()
+            let rect = NSRect(x: offset + col * cellW + 2, y: row * cellH + 2, width: cellW-4, height: cellH-4)
+            let stone = NSBezierPath()
+            stone.move(to:NSPoint(x:rect.minX+2+random()*4,y:rect.minY+random()*3))
+            stone.line(to:NSPoint(x:rect.maxX-3-random()*5,y:rect.minY+random()*3))
+            stone.line(to:NSPoint(x:rect.maxX-random()*3,y:rect.minY+5+random()*5))
+            stone.line(to:NSPoint(x:rect.maxX-random()*2,y:rect.maxY-5-random()*3))
+            stone.line(to:NSPoint(x:rect.maxX-5-random()*5,y:rect.maxY-random()*2))
+            stone.line(to:NSPoint(x:rect.minX+5+random()*4,y:rect.maxY-random()*2))
+            stone.line(to:NSPoint(x:rect.minX+random()*3,y:rect.maxY-4-random()*5))
+            stone.line(to:NSPoint(x:rect.minX+random()*2,y:rect.minY+7))
+            stone.close(); stone.fill()
+            NSColor(calibratedRed:base+0.13,green:base+0.09,blue:base+0.025,alpha:0.29).setStroke()
+            let edge = NSBezierPath()
+            edge.move(to:NSPoint(x:rect.minX+8,y:rect.maxY-3)); edge.line(to:NSPoint(x:rect.maxX-10,y:rect.maxY-4))
+            edge.lineWidth = 1.2; edge.stroke()
+            for _ in 0..<22 {
+                let xx = rect.minX+3+random()*CGFloat(cellW-12), yy = rect.minY+3+random()*CGFloat(cellH-12)
+                NSColor(calibratedWhite:random() < 0.35 ? 0.63 : 0.04,alpha:0.08+random()*0.09).setFill()
+                NSBezierPath(rect:NSRect(x:xx,y:yy,width:2+random()*8,height:1+random()*2)).fill()
+            }
+            if random() < 0.7 {
+                let x = rect.minX+20+random()*70, y = rect.maxY-2
+                let crack = NSBezierPath()
+                crack.move(to:NSPoint(x:x,y:y))
+                crack.line(to:NSPoint(x:x-7,y:y-CGFloat(cellH)*0.24))
+                crack.line(to:NSPoint(x:x+4,y:y-CGFloat(cellH)*0.39))
+                crack.line(to:NSPoint(x:x-10,y:y-CGFloat(cellH)*0.74))
+                crack.move(to:NSPoint(x:x+4,y:y-CGFloat(cellH)*0.39))
+                crack.line(to:NSPoint(x:x+20,y:y-CGFloat(cellH)*0.46))
+                NSColor(calibratedRed:0.04,green:0.036,blue:0.027,alpha:0.52).setStroke()
+                crack.lineWidth = 1.0+random()*1.1; crack.stroke()
+            }
+        }
+    }
     for i in 0..<14000 {
-        let xx = random() * 512, yy = random() * 512
-        NSColor(calibratedWhite: i % 3 == 0 ? 0.86 : 0.04, alpha: 0.025 + random()*0.06).setFill()
+        let xx = random()*512, yy = random()*512
+        NSColor(calibratedWhite:i % 3 == 0 ? 0.78 : 0.02,alpha:0.035+random()*0.085).setFill()
         NSBezierPath(rect:NSRect(x:xx,y:yy,width:1+random()*3,height:1+random()*2)).fill()
     }
-    for _ in 0..<330 {
+    for _ in 0..<480 {
         let xx = random()*512, yy = random()*512
-        NSColor(calibratedRed:0.055,green:0.066,blue:0.027,alpha:0.022).setFill()
-        NSBezierPath(ovalIn:NSRect(x:xx,y:yy,width:12+random()*70,height:7+random()*26)).fill()
+        NSColor(calibratedRed:0.028,green:0.036,blue:0.012,alpha:0.035).setFill()
+        NSBezierPath(ovalIn:NSRect(x:xx,y:yy,width:15+random()*82,height:8+random()*36)).fill()
+    }
+    if !floor {
+        for _ in 0..<70 {
+            let xx = random()*512, yy = random()*512
+            NSColor(calibratedRed:0.021,green:0.016,blue:0.008,alpha:0.06).setFill()
+            NSBezierPath(ovalIn:NSRect(x:xx,y:yy-100,width:3+random()*14,height:50+random()*180)).fill()
+        }
+    }
+    image.unlockFocus()
+    return image
+}
+
+private func worldBannerTexture() -> NSImage {
+    let image = NSImage(size:NSSize(width:128,height:256))
+    image.lockFocus()
+    NSColor(calibratedRed:0.20,green:0.023,blue:0.014,alpha:1).setFill()
+    NSBezierPath(rect:NSRect(x:0,y:0,width:128,height:256)).fill()
+    for i in 0..<64 {
+        NSColor(calibratedRed:0.032,green:0.012,blue:0.008,alpha:i % 3 == 0 ? 0.45 : 0.16).setFill()
+        NSBezierPath(rect:NSRect(x:i*2,y:0,width:1,height:256)).fill()
+    }
+    for i in 0..<110 {
+        NSColor(calibratedRed:0.045,green:0.025,blue:0.011,alpha:0.12).setFill()
+        NSBezierPath(ovalIn:NSRect(x:(i*47)%128,y:(i*71)%256,width:3+i%16,height:8+i%27)).fill()
     }
     image.unlockFocus()
     return image
@@ -84,18 +128,21 @@ private final class WorldBuilder {
             m.diffuse.wrapS = .repeat; m.diffuse.wrapT = .repeat
             m.diffuse.mipFilter = .linear; m.lightingModel = .blinn; m.shininess = 0.04
         }
-        trim.diffuse.contents = NSColor(calibratedRed: 0.39, green: 0.43, blue: 0.46, alpha: 1)
-        dark.diffuse.contents = NSColor(calibratedRed: 0.075, green: 0.095, blue: 0.105, alpha: 1)
-        gold.diffuse.contents = NSColor(calibratedRed: 0.42, green: 0.28, blue: 0.105, alpha: 1)
+        trim.diffuse.contents = stone.diffuse.contents
+        trim.diffuse.wrapS = .repeat; trim.diffuse.wrapT = .repeat
+        trim.diffuse.mipFilter = .linear
+        trim.diffuse.contentsTransform = SCNMatrix4MakeScale(0.7, 1.5, 1)
+        dark.diffuse.contents = NSColor(calibratedRed: 0.063, green: 0.058, blue: 0.050, alpha: 1)
+        gold.diffuse.contents = NSColor(calibratedRed: 0.31, green: 0.21, blue: 0.077, alpha: 1)
         copper.diffuse.contents = NSColor(calibratedRed: 0.18, green: 0.12, blue: 0.08, alpha: 1)
-        ceiling.diffuse.contents = NSColor(calibratedRed: 0.085, green: 0.105, blue: 0.13, alpha: 1)
-        cyan.diffuse.contents = NSColor(calibratedRed: 0.17, green: 0.65, blue: 0.8, alpha: 1)
-        cyan.emission.contents = NSColor(calibratedRed: 0.12, green: 0.55, blue: 0.75, alpha: 1)
+        ceiling.diffuse.contents = NSColor(calibratedRed: 0.037, green: 0.043, blue: 0.039, alpha: 1)
+        cyan.diffuse.contents = NSColor(calibratedRed: 0.10, green: 0.29, blue: 0.24, alpha: 1)
+        cyan.emission.contents = NSColor(calibratedRed: 0.045, green: 0.20, blue: 0.16, alpha: 1)
         amber.diffuse.contents = NSColor(calibratedRed: 1, green: 0.48, blue: 0.08, alpha: 1)
         amber.emission.contents = NSColor(calibratedRed: 1, green: 0.30, blue: 0.015, alpha: 1)
-        red.diffuse.contents = NSColor(calibratedRed: 0.36, green: 0.045, blue: 0.025, alpha: 1)
-        red.emission.contents = NSColor(calibratedRed: 0.13, green: 0.008, blue: 0.002, alpha: 1)
-        for m in [trim, dark, gold, copper, ceiling] { m.lightingModel = .blinn; m.shininess = 0.12 }
+        red.diffuse.contents = worldBannerTexture()
+        red.emission.contents = NSColor.black
+        for m in [trim, dark, gold, copper, ceiling] { m.lightingModel = .blinn; m.shininess = 0.025 }
         root.addChildNode(architecture)
     }
 
@@ -291,11 +338,49 @@ private final class WorldBuilder {
     }
     func banner(_ x: Float,_ z: Float,rotation: Float = 0) {
         let n = SCNNode(); n.position = v3(x,3.1,z); n.eulerAngles.y = CGFloat(rotation); architecture.addChildNode(n)
-        box(1.35,2.85,0.04,0,0,0,red,parent:n)
+        let cloth = NSBezierPath()
+        cloth.move(to:NSPoint(x:-0.675,y:1.425)); cloth.line(to:NSPoint(x:0.675,y:1.425))
+        for (x,y): (CGFloat,CGFloat) in [(0.675,-1.16),(0.48,-1.05),(0.38,-1.51),(0.17,-1.26),(0.09,-1.62),(-0.12,-1.19),(-0.30,-1.49),(-0.45,-1.15),(-0.675,-1.34)] {
+            cloth.line(to:NSPoint(x:x,y:y))
+        }
+        cloth.close()
+        let fabric = SCNShape(path:cloth,extrusionDepth:0.025); fabric.materials = [red]
+        n.addChildNode(SCNNode(geometry:fabric))
         rod(v3(-0.82,1.46,0),v3(0.82,1.46,0),radius:0.055,material:gold,parent:n)
         box(0.065,1.45,0.015,0,0.12,0.037,gold,parent:n)
         rod(v3(-0.36,0.45,0.04),v3(0,-0.35,0.04),radius:0.043,material:gold,parent:n)
         rod(v3(0,-0.35,0.04),v3(0.36,0.45,0.04),radius:0.043,material:gold,parent:n)
+    }
+
+    func funeraryRelief(_ x: Float,_ z: Float,rotation: Float = 0) {
+        // Shallow death masks stay above head height and inside existing wall skins.
+        let n = SCNNode(); n.position = v3(x,3.6,z); n.eulerAngles.y = CGFloat(rotation); architecture.addChildNode(n)
+        box(1.22,1.72,0.07,0,0,0,dark,chamfer:0.06,parent:n)
+        box(1.07,1.57,0.075,0,0,0.045,stone,chamfer:0.045,parent:n)
+        let skull = SCNSphere(radius:0.39); skull.segmentCount = 10; skull.materials = [trim]
+        let head = SCNNode(geometry:skull); head.position = v3(0,0.14,0.15); head.scale = v3(0.87,1.04,0.48); n.addChildNode(head)
+        box(0.40,0.22,0.17,0,-0.23,0.19,trim,chamfer:0.025,parent:n)
+        for sx: Float in [-0.14,0.14] {
+            let socket = SCNSphere(radius:0.105); socket.segmentCount = 8; socket.materials = [dark]
+            let eye = SCNNode(geometry:socket); eye.position = v3(sx,0.16,0.325); eye.scale = v3(1,0.82,0.19); n.addChildNode(eye)
+        }
+        box(0.065,0.105,0.025,0,-0.02,0.335,dark,chamfer:0.009,parent:n)
+        for sx: Float in [-0.12,0,0.12] { box(0.034,0.11,0.03,sx,-0.25,0.284,dark,parent:n) }
+        rod(v3(-0.32,-0.66,0.1),v3(0.32,-0.43,0.1),radius:0.052,material:trim,parent:n)
+        rod(v3(0.32,-0.66,0.1),v3(-0.32,-0.43,0.1),radius:0.052,material:trim,parent:n)
+        for sx: Float in [-0.40,0.40] { box(0.07,0.07,0.025,sx,0.61,0.095,copper,parent:n) }
+    }
+
+    func hangingIron(_ z: Float) {
+        // Broken portcullis teeth only occupy the overhead space, leaving the gallery clear.
+        box(5.7,0.12,0.15,0,5.65,z,dark)
+        for i in -3...3 {
+            let xx = Float(i)*0.77, drop: Float = i % 2 == 0 ? 1.28 : 0.79
+            rod(v3(xx,5.65,z),v3(xx,5.65-drop,z),radius:0.048,material:copper)
+            let tip = SCNCone(topRadius:0,bottomRadius:0.11,height:0.27)
+            tip.radialSegmentCount = 5; tip.materials = [dark]
+            let tooth = SCNNode(geometry:tip); tooth.position = v3(xx,5.53-drop,z); tooth.eulerAngles.z = .pi; architecture.addChildNode(tooth)
+        }
     }
 
     func wayfindingPlaque(_ direction: String, _ destination: String, x: Float, z: Float, side: Float) {
@@ -306,7 +391,7 @@ private final class WorldBuilder {
         box(2.28,0.72,0.12,0,0,0.024,dark,chamfer:0.035,parent:plate)
         let lettering = SCNMaterial()
         lettering.diffuse.contents = NSColor(calibratedRed:0.68,green:0.55,blue:0.32,alpha:1)
-        lettering.emission.contents = NSColor(calibratedRed:0.055,green:0.041,blue:0.02,alpha:1)
+        lettering.emission.contents = NSColor(calibratedRed:0.22,green:0.15,blue:0.065,alpha:1)
         lettering.lightingModel = .blinn
         for (line, yy, height) in [(direction,Float(0.18),Float(0.16)),(destination,Float(-0.17),Float(0.24))] {
             let text = SCNText(string:line,extrusionDepth:0.015)
@@ -347,6 +432,10 @@ private final class WorldBuilder {
             for zz: Float in [-2,-10] { arch(xx,zz,width:8,base:4.9,rise:2.9,alongZ:true,radius:0.12) }
         }
         chandelier(0,-5)
+        for zz: Float in [-5,-13] {
+            funeraryRelief(-8.73,zz,rotation:.pi/2)
+            funeraryRelief(8.73,zz,rotation:-.pi/2)
+        }
         stainedWindow(0,2.4,7.73,width:3.3,height:4.2,rotation:.pi)
         for xx: Float in [-4.5,4.5] { banner(xx,-17.72) }
         for zz: Float in [-18,-30,-56,-72,-96,-106] { portal(0,zz) }
@@ -354,6 +443,7 @@ private final class WorldBuilder {
         // Rib rhythm in connecting galleries.
         for zz: Float in [-22,-27,-61,-67,-100] { arch(0,zz,width:5.65,base:3.2,rise:3.55,radius:0.13) }
         for xx: Float in [-25,-18,18,25] { arch(xx,-44,width:5.65,base:3.2,rise:3.55,alongZ:true,radius:0.13) }
+        for zz: Float in [-24,-63,-100] { hangingIron(zz) }
         // Cruciform crossing: long sightlines make branch navigation legible.
         for zz: Float in [-34,-52] {
             for xx: Float in [-8.1,8.1] { pillar(xx,zz,height:5.1,radius:0.56) }
@@ -373,6 +463,7 @@ private final class WorldBuilder {
         stainedWindow(-45.72,2.1,-44,width:4.3,height:4.7,rotation:.pi/2)
         for xx: Float in [-42,-34] { banner(xx,-54.72); brazier(xx,-52.5) }
         sigilDais(-38,-51)
+        funeraryRelief(-38,-54.73)
         // Furnace chapel uses glowing inset wall plates, a warm counterpart to the ossuary.
         for zz: Float in [-37,-51] { arch(38,zz,width:13,base:4.5,rise:4.6) }
         stainedWindow(45.72,2.1,-44,width:4.3,height:4.7,rotation:-.pi/2,hot:true)
@@ -382,6 +473,7 @@ private final class WorldBuilder {
         }
         for zz: Float in [-36,-52] { box(8,0.055,0.8,38,0.025,zz,dark); box(7.5,0.02,0.18,38,0.06,zz,amber) }
         sigilDais(38,-51)
+        funeraryRelief(38,-54.73)
         // High crypt: layered monuments keep the final fight mobile.
         for zz: Float in [-77,-90] {
             for xx: Float in [-9.5,9.5] { pillar(xx,zz,height:5.3,radius:0.62); tomb(xx*0.64,zz) }
@@ -392,32 +484,34 @@ private final class WorldBuilder {
         }
         for xx: Float in [-7,7] { banner(xx,-95.72); brazier(xx,-93.7) }
         sigilDais(0,-92)
+        for xx: Float in [-10.6,10.6] { funeraryRelief(xx,-95.73) }
         // Sanctum: an illuminated rose-like pointed window frames the extraction seal.
         stainedWindow(0,2.15,-121.72,width:4.8,height:4.9)
         for xx: Float in [-5.3,5.3] { pillar(xx,-117,height:4.7,radius:0.48); brazier(xx,-111) }
         arch(0,-117,width:10.6,base:4.7,rise:4.7)
         sigilDais(0,-116)
         // Eleven local lights plus the caller's ambient/directional illumination.
-        point(0,5,-4,color:NSColor(calibratedRed:0.45,green:0.63,blue:0.8,alpha:1),intensity:700,reach:23)
-        point(0,3,-15,color:NSColor(calibratedRed:1,green:0.58,blue:0.30,alpha:1),intensity:500,reach:15)
-        point(0,3.5,-25,color:NSColor(calibratedRed:0.34,green:0.58,blue:0.70,alpha:1),intensity:300,reach:11)
-        point(0,6,-43,color:NSColor(calibratedRed:0.38,green:0.64,blue:0.79,alpha:1),intensity:900,reach:24)
-        point(-38,4,-44,color:NSColor(calibratedRed:0.18,green:0.62,blue:0.85,alpha:1),intensity:850,reach:18)
-        point(38,3.5,-44,color:NSColor(calibratedRed:1,green:0.39,blue:0.12,alpha:1),intensity:850,reach:18)
+        point(0,5,-4,color:NSColor(calibratedRed:0.44,green:0.50,blue:0.43,alpha:1),intensity:620,reach:23)
+        point(0,3,-15,color:NSColor(calibratedRed:1,green:0.47,blue:0.19,alpha:1),intensity:500,reach:15)
+        point(0,3.5,-25,color:NSColor(calibratedRed:0.33,green:0.45,blue:0.39,alpha:1),intensity:320,reach:11)
+        point(0,6,-43,color:NSColor(calibratedRed:0.42,green:0.52,blue:0.42,alpha:1),intensity:790,reach:24)
+        point(-38,4,-44,color:NSColor(calibratedRed:0.22,green:0.48,blue:0.38,alpha:1),intensity:730,reach:18)
+        point(38,3.5,-44,color:NSColor(calibratedRed:1,green:0.29,blue:0.08,alpha:1),intensity:780,reach:18)
         point(0,3,-64,color:NSColor(calibratedRed:1,green:0.57,blue:0.29,alpha:1),intensity:400,reach:13)
-        point(-8,4.5,-84,color:NSColor(calibratedRed:0.27,green:0.55,blue:0.78,alpha:1),intensity:850,reach:19)
-        point(8,4,-84,color:NSColor(calibratedRed:0.39,green:0.61,blue:0.78,alpha:1),intensity:850,reach:19)
+        point(-8,4.5,-84,color:NSColor(calibratedRed:0.31,green:0.42,blue:0.46,alpha:1),intensity:730,reach:19)
+        point(8,4,-84,color:NSColor(calibratedRed:0.43,green:0.34,blue:0.25,alpha:1),intensity:740,reach:19)
         point(0,3,-94,color:NSColor(calibratedRed:1,green:0.50,blue:0.24,alpha:1),intensity:550,reach:14)
-        point(0,4,-116,color:NSColor(calibratedRed:0.16,green:0.63,blue:0.84,alpha:1),intensity:850,reach:18)
-        // Preserve grouped transforms; native SceneKit shares the small material palette.
-        root.name = "Black Reliquary — original gothic architecture"
+        point(0,4,-116,color:NSColor(calibratedRed:0.26,green:0.50,blue:0.42,alpha:1),intensity:780,reach:18)
+        // Static details share the existing small material palette; only brazier flames animate.
+        root.name = "Black Reliquary — soot-blackened gothic ruins"
         let enemies: [EnemySpawn] = [
             .init(x:-3,z:-10,kind:0),.init(x:4,z:-15,kind:0),.init(x:0,z:-27,kind:0),
             .init(x:-4,z:-36,kind:0),.init(x:4,z:-39,kind:1),.init(x:1,z:-51,kind:0),
             .init(x:-20,z:-44,kind:0),.init(x:-37,z:-39,kind:0),.init(x:-40,z:-47,kind:1),.init(x:-35,z:-51,kind:0),
             .init(x:22,z:-44,kind:0),.init(x:38,z:-37,kind:0),.init(x:40,z:-45,kind:1),.init(x:36,z:-50,kind:0),
             .init(x:0,z:-68,kind:0),.init(x:-3,z:-76,kind:0),.init(x:4,z:-78,kind:1),
-            .init(x:-10,z:-85,kind:0),.init(x:10,z:-85,kind:0),.init(x:-3,z:-91,kind:1),.init(x:4,z:-93,kind:0),.init(x:0,z:-112,kind:1)
+            .init(x:-10,z:-85,kind:0),.init(x:10,z:-85,kind:0),.init(x:-3,z:-91,kind:1),.init(x:4,z:-93,kind:0),.init(x:0,z:-112,kind:1),
+            .init(x:-4,z:-46,kind:2),.init(x:-38,z:-46,kind:2),.init(x:38,z:-48,kind:2),.init(x:0,z:-83,kind:2)
         ]
         let pickups: [PickupSpawn] = [
             .init(x:2,z:3,kind:1),.init(x:-2,z:3,kind:2),.init(x:-7.7,z:-10,kind:0),.init(x:7.7,z:-10,kind:1),
@@ -425,7 +519,8 @@ private final class WorldBuilder {
             .init(x:-38,z:-35,kind:1),.init(x:-44,z:-44,kind:0),.init(x:-35,z:-48,kind:2),
             .init(x:38,z:-35,kind:1),.init(x:44,z:-44,kind:0),.init(x:35,z:-48,kind:2),
             .init(x:-1.5,z:-70,kind:1),.init(x:1.5,z:-70,kind:2),.init(x:0,z:-73,kind:0),
-            .init(x:-12,z:-90,kind:0),.init(x:12,z:-90,kind:1),.init(x:0,z:-87,kind:2),.init(x:0,z:-104,kind:0)
+            .init(x:-12,z:-90,kind:0),.init(x:12,z:-90,kind:1),.init(x:0,z:-87,kind:2),.init(x:0,z:-104,kind:0),
+            .init(x:0,z:-6,kind:3),.init(x:-31.5,z:-44,kind:3),.init(x:31.5,z:-44,kind:3)
         ]
         let names = ["THE ASHEN NAVE","GALLERY OF WHISPERS","THE SUNDERED CROSSING","WESTERN CLOISTER","THE OSSUARY","EASTERN CLOISTER","FURNACE CHAPEL","THE PENITENT'S WALK","CRYPT OF THE FORSAKEN","THE LAST PROCESSION","THE BLACK RELIQUARY"]
         return WorldData(root:root,walkable:walkable,obstacles:obstacles,spawn:v3(0,1.65,4),enemies:enemies,pickups:pickups,sigils:[v3(-38,1.2,-51),v3(38,1.2,-51),v3(0,1.2,-92)],exit:v3(0,0,-116),zones:zip(names,walkable).map { Zone(name:$0.0,rect:$0.1) })

@@ -15,7 +15,11 @@ final class GameAudio: NSObject, AVAudioPlayerDelegate {
     private let levels: [String: Float] = [
         "shotgun": 0.72, "rocket": 0.65, "explosion": 0.72,
         "hurt": 0.53, "enemy": 0.43, "pickup": 0.42,
-        "seal": 0.63, "win": 0.57
+        "seal": 0.63, "win": 0.57,
+        "empowered_shot": 0.73, "empowered_rocket": 0.69,
+        "gore_burst": 0.56, "monster_leap": 0.49,
+        "monster_land": 0.51, "monster_roar": 0.47,
+        "powerup": 0.57, "gate_open": 0.62
     ]
 
     override init() {

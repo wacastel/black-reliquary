@@ -18,6 +18,8 @@ struct HUDState {
     var fps: Int = 60
     var sensitivity: Double = 1.0
     var muted: Bool = false
+    var powerupRemaining: Double = 0
+    var gateOpen: Bool = false
 }
 
 final class HUDView: NSView {
@@ -117,7 +119,7 @@ final class HUDView: NSView {
         rule(NSPoint(x: x, y: 51 * s), NSPoint(x: w - x, y: 51 * s), color: gold.withAlphaComponent(0.22))
         type("AN ORIGINAL GOTHIC SHOOTER", x: x, y: 20 * s, width: 410 * s,
              size: 9 * s, color: muted, tracking: 1.7 * s)
-        type("NATIVE ARM64     /     ~5 MINUTE PROTOTYPE", x: w - x - 470 * s, y: 20 * s,
+        type("BLOODFIRE UPDATE     /     CHAPTER 01", x: w - x - 470 * s, y: 20 * s,
              width: 470 * s, size: 9 * s, color: muted, tracking: 1.3 * s, align: .right)
     }
 
@@ -145,7 +147,7 @@ final class HUDView: NSView {
 
         // A fine, open reticle preserves visibility of distant enemies.
         let cx = w / 2, cy = h / 2, gap = 6 * s, length = 6 * s
-        let reticle = ivory.withAlphaComponent(0.8)
+        let reticle = state.powerupRemaining>0 ? NSColor(calibratedRed:1,green:0.3,blue:0.08,alpha:0.95) : ivory.withAlphaComponent(0.8)
         rule(NSPoint(x: cx - gap - length, y: cy), NSPoint(x: cx - gap, y: cy), color: reticle)
         rule(NSPoint(x: cx + gap, y: cy), NSPoint(x: cx + gap + length, y: cy), color: reticle)
         rule(NSPoint(x: cx, y: cy - gap - length), NSPoint(x: cx, y: cy - gap), color: reticle)
@@ -173,8 +175,17 @@ final class HUDView: NSView {
             diamond(x: w / 2 + CGFloat(i - 1) * 28 * s, y: 78 * s, radius: 11 * s,
                     filled: i < state.seals, color: i < state.seals ? gold : ivory.withAlphaComponent(0.32))
         }
-        type("\(state.seals) / 3   SEALS", x: w / 2 - 130 * s, y: 36 * s,
-             width: 260 * s, size: 9 * s, color: muted, tracking: 1.8 * s, align: .center)
+        type(state.gateOpen ? "GATE OPEN · HEAD NORTH" : "\(state.seals) / 3   SEALS", x: w / 2 - 150 * s, y: 36 * s,
+             width: 300 * s, size: 9 * s, color: state.gateOpen ? NSColor(calibratedRed:0.4,green:0.95,blue:0.64,alpha:1):muted, tracking: 1.8 * s, align: .center)
+
+        if state.powerupRemaining>0 {
+            let fire=NSColor(calibratedRed:1,green:0.33,blue:0.09,alpha:1)
+            let box=NSRect(x:w/2-153*s,y:h-100*s,width:306*s,height:40*s)
+            NSColor(calibratedRed:0.065,green:0.012,blue:0.006,alpha:0.9).setFill(); box.fill()
+            type(String(format:"BLOODFIRE   5× DAMAGE   %02ds",Int(ceil(state.powerupRemaining))),x:box.minX,y:box.minY+12*s,width:box.width,size:11*s,color:fire,tracking:1*s,align:.center)
+            fire.withAlphaComponent(0.22).setFill(); NSRect(x:box.minX,y:box.minY,width:box.width,height:3*s).fill()
+            fire.setFill(); NSRect(x:box.minX,y:box.minY,width:box.width*CGFloat(min(1,state.powerupRemaining/25)),height:3*s).fill()
+        }
 
         type(state.weapon == 0 ? "01   /   IRON SHOTGUN" : "02   /   ROCKET LANCE",
              x: w - edge - 300 * s, y: 92 * s, width: 300 * s,

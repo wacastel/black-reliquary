@@ -9,7 +9,7 @@ struct WalkRect {
     }
 }
 struct EnemySpawn { var x: Float; var z: Float; var kind: Int }
-struct PickupSpawn { var x: Float; var z: Float; var kind: Int } // 0 health, 1 shells, 2 rockets
+struct PickupSpawn { var x: Float; var z: Float; var kind: Int } // 0 health, 1 shells, 2 rockets, 3 Bloodfire
 struct Zone { var name: String; var rect: WalkRect }
 struct WorldData {
     let root: SCNNode

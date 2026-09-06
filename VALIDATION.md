@@ -1,24 +1,30 @@
-# Prototype validation
+# Prototype validation — v0.2.0 Bloodfire
 
-Test host: Apple M5, 8-core GPU, macOS 26.6.2. Built as an ARM64 Mach-O executable with Swift 6.3.3. Local app signing passed.
+Test host: Apple M5, macOS 26.6.2. Rebuilt with Swift 6.3.3 as an ARM64 Mach-O executable targeting macOS 14 or newer. The locally signed app verifies after release ZIP extraction.
 
-## Passed
+## Completed checks
 
-- Native AppKit window is visible and SceneKit reports the Metal rendering backend.
-- Native fullscreen transition completes; the window reports the fullscreen style.
-- Player spawn, all 22 enemy spawns, and all pickup spawns are inside navigable space.
-- All three seals and the final exit are reachable. An independent check also swept each planned route past obstacle footprints.
-- Player movement changes position and respects walls.
-- Short projectile sweeps collide with walls. This check covers a collision defect found and fixed during development.
-- Firing consumes ammunition.
-- Assisted automated playthrough kills all 22 guardians, collects all three seals, and triggers victory.
-- Original soundtrack and eight effects are bundled; PCM generation checks found no sample clipping.
-- Native render snapshots of the title screen, gameplay, and signage were visually inspected.
+`Tests/bloodfire-enhancements.json` records the fullscreen integration run. All 36 boolean checks passed. Counts were checked separately: 26 enemies, four leapers, three Bloodfire relics, and a measured 5× shotgun damage multiplier.
 
-The fullscreen smoke scenario sampled approximately 60 rendered frames per second using SceneKit render callbacks. This is a short scene check, not a sustained thermal or whole-level performance benchmark.
+- Native visible AppKit window, Metal rendering, and native fullscreen.
+- Valid player, enemy, and pickup positions; all seals and the exit reachable.
+- Player movement, wall collision, short projectile wall sweeps, ammunition consumption, and shot cooldowns.
+- Bloodfire pickup through normal collision, fivefold damage, weapon switching, pause behavior, expiry, and restart cleanup.
+- Powered shotgun kills produce fragments. Fragments move ballistically. Powered rockets retain their upgrade after the player's timer expires, and outer-edge splash bursts the leaper.
+- Leapers leave the ground, travel toward the player, land, and remain in navigable space. Wall-adjacent leaps use the same clearance as ground movement. Enemy animation changes the articulated pose and emits a glow.
+- The gate starts locked, remains locked with two seals, and activates its light, portal surface, and spark emitter only after the third seal. Unlocking happens once. The unlocked gate wins; the locked gate cannot win.
+- All eight new sound effects are bundled. Their generated PCM was separately checked for valid encoding, no clipped samples, silent endpoints, and deterministic regeneration.
 
-The automated playthrough completed in 85.49 simulated seconds with exact aiming, route planning, replenished ammunition, and assisted health. It validates the game loop; it does not measure human playtime or combat balance. The intended first-play length is approximately five minutes.
+`Tests/assisted-playthrough.json` records a complete playthrough using normal movement, combat, pickups, and objectives with assisted health, ammunition, and exact aiming. It defeated all 26 enemies, collected all three seals, and reached victory in 84.73 simulated seconds. This validates the game loop; it does not measure human playtime or difficulty.
+
+## Visual and performance checks
+
+Native render snapshots of the darker crossing, glowing enemies, an airborne leaper, a powered impact, and the unlocked gate were inspected. Paths and signage remained readable. The title screen and gameplay images in the repository reflect this version.
+
+The fullscreen smoke run sampled approximately 60 rendered FPS. The populated crossing also sampled 59.97 FPS with all 26 enemies alive in a separate four-second assisted-health scenario, recorded in `Tests/bloodfire-performance.json`. FPS comes from SceneKit render callbacks, separately from the simulation timer. Dynamic enemy aura lights are limited to the four nearest living enemies within 12 meters; emissive markings remain visible on other enemies. Debris is capped at 160 pieces and expires.
+
+These are short checks, not sustained thermal or worst-case performance benchmarks.
 
 ## Human playtest still needed
 
-Direct trackpad/WASD feel, preferred aim sensitivity, audio mix, and combat difficulty. Desktop UI automation could not run because macOS Accessibility/Screen Recording permissions were pending. Native rendering, fullscreen, and gameplay checks ran through the app's own test scenarios.
+Trackpad feel, audio mix and perceived intensity, readability on your preferred display brightness, revised enemy difficulty, and powerup pacing. The automated playthrough uses assistance and cannot establish combat balance. Native game checks do not replace a manual playthrough with the actual keyboard and trackpad.

@@ -12,9 +12,13 @@ RNG = np.random.default_rng(91743)
 STATS = {}
 
 
-def save(name, signal, peak=0.8):
+def save(name, signal, peak=0.8, smooth_edges=False):
     signal = np.asarray(signal, dtype=np.float64)
     signal -= signal.mean(axis=0)
+    if smooth_edges:
+        # DC removal can lift zero endpoints on asymmetric creature voices.
+        # Fade after removing DC so one-shot playback cannot click at its edges.
+        signal = fade(signal, .002, .035)
     signal *= peak / max(np.max(np.abs(signal)), 1e-9)
     pcm = np.rint(signal * 32767).astype('<i2')
     channels = 1 if signal.ndim == 1 else signal.shape[1]
@@ -174,9 +178,114 @@ def effects():
     save('win', reverb(fade(win, .08, 1.6), .35), .65)
 
 
+def empowered_effects():
+    """Heavy relic weapons, creature voices, and gate magic; all synthesized here."""
+    # Use a separate seed so these effects can be rebuilt independently and match
+    # a full rebuild exactly, without changing the existing soundtrack.
+    global RNG
+    original_rng = RNG
+    RNG = np.random.default_rng(914726)
+
+    t = np.arange(int(SR * 1.03)) / SR
+    pitch = 112 * t - 58 * t * t + 15 * t ** 3
+    thunder = .75 * np.sin(2 * np.pi * pitch) * np.exp(-t * 10)
+    thunder += .55 * noise(len(t), 38, 980) * np.exp(-t * 6.8)
+    thunder += .34 * noise(len(t), 680, 6700) * np.exp(-t * 32)
+    # A brief saturated core gives the blast weight without a large volume jump.
+    thunder = .7 * np.tanh(thunder * 1.6)
+    thunder += .14 * noise(len(t), 26, 210) * np.exp(-t * 3.4)
+    save('empowered_shot', reverb(fade(thunder, .0018, .17), .33), .88, smooth_edges=True)
+
+    t = np.arange(int(SR * 1.2)) / SR
+    exhaust = noise(len(t), 95, 3800) * np.exp(-t * 6)
+    exhaust *= .75 + .25 * np.sin(2 * np.pi * (31 * t - 9 * t * t))
+    core = np.sin(2 * np.pi * (86 * t - 28 * t * t + 5 * t ** 3)) * np.exp(-t * 7.5)
+    ignition = noise(len(t), 850, 6000) * np.exp(-t * 37)
+    launch = .52 * exhaust + .73 * core + .21 * ignition
+    launch += .18 * noise(len(t), 24, 250) * np.exp(-t * 3.5)
+    save('empowered_rocket', reverb(fade(np.tanh(launch * 1.4), .002, .20), .35), .86, smooth_edges=True)
+
+    t = np.arange(int(SR * .9)) / SR
+    # Deep fleshy impact under brittle bone cracks and descending liquid pops.
+    burst = .58 * noise(len(t), 75, 1300) * np.exp(-t * 15)
+    burst += .48 * np.sin(2 * np.pi * (137 * t - 63 * t * t)) * np.exp(-t * 19)
+    burst += .23 * noise(len(t), 1500, 7900) * np.exp(-t * 43)
+    for when, level, pitch in [(0.022, .38, 320), (.071, .27, 460),
+                               (.124, .29, 270), (.205, .17, 380),
+                               (.312, .12, 240), (.437, .075, 300)]:
+        tt = np.maximum(t - when, 0)
+        env = (t >= when) * (1 - np.exp(-tt * 2400)) * np.exp(-tt * 70)
+        liquid_phase = 2 * np.pi * (pitch * tt - pitch * 5 * tt * tt)
+        pop = .6 * np.sin(liquid_phase) + .33 * noise(len(t), 900, 6000)
+        burst += level * pop * env
+    save('gore_burst', reverb(fade(burst, .0015, .15), .15), .83, smooth_edges=True)
+
+    def creature(t, pitch, breath):
+        phase = 2 * np.pi * np.cumsum(pitch) / SR
+        # Irregular pulse rasp plus moving upper resonances: a nonhuman snarl.
+        pulse = np.sin(phase + 1.15 * np.sin(phase * .503))
+        pulse += .34 * np.sin(phase * 2.01) + .20 * np.sin(phase * 3.98)
+        voice = .6 * np.tanh(pulse * 2.5)
+        voice += .16 * np.sin(phase * 7.03 + 1.3 * np.sin(2 * np.pi * 19 * t))
+        voice += breath * noise(len(t), 350, 3400)
+        return voice * (.79 + .15 * np.sin(2 * np.pi * 27 * t)
+                        + .06 * np.sin(2 * np.pi * 41 * t))
+
+    t = np.arange(int(SR * .83)) / SR
+    pitch = 96 + 175 * np.exp(-((t - .22) / .16) ** 2) + 19 * np.sin(2 * np.pi * 9 * t)
+    leap = creature(t, pitch, .25) * (1 - np.exp(-t * 35)) * np.exp(-t * 2.7)
+    save('monster_leap', reverb(fade(leap, .013, .22), .27), .75, smooth_edges=True)
+
+    t = np.arange(int(SR * 1.9)) / SR
+    pitch = 72 + 57 * np.exp(-t * 1.7) + 9 * np.sin(2 * np.pi * 5.5 * t)
+    roar = creature(t, pitch, .22) * (1 - np.exp(-t * 12)) * np.exp(-t * 1.7)
+    roar += .16 * noise(len(t), 35, 270) * (1 - np.exp(-t * 20)) * np.exp(-t * 2)
+    save('monster_roar', reverb(fade(roar, .024, .4), .37), .72, smooth_edges=True)
+
+    t = np.arange(int(SR * .72)) / SR
+    land = .68 * np.sin(2 * np.pi * (72 * t - 31 * t * t)) * np.exp(-t * 15)
+    land += .48 * noise(len(t), 32, 700) * np.exp(-t * 11)
+    land += .22 * noise(len(t), 1000, 5200) * np.exp(-t * 32)
+    # Claws scrape stone just after the main body impact.
+    scrape = np.maximum(t - .055, 0)
+    land += (t >= .055) * noise(len(t), 1600, 6200) * .085 * np.exp(-scrape * 15)
+    save('monster_land', reverb(fade(land, .002, .16), .30), .80, smooth_edges=True)
+
+    t = np.arange(int(SR * 2.6)) / SR
+    swell = (1 - np.exp(-t * 5)) * np.exp(-t * 2.3)
+    surge = .33 * noise(len(t), 95, 1700) * swell
+    surge += .32 * np.sin(2 * np.pi * (54 * t + 27 * t * t)) * swell
+    for when, freq, level in [(0, 98, .70), (.15, 146.83, .42),
+                              (.29, 207.65, .29), (.46, 392, .17)]:
+        tt = np.maximum(t - when, 0)
+        env = (t >= when) * (1 - np.exp(-tt * 45)) * np.exp(-tt * 2.1)
+        surge += level * env * (np.sin(2 * np.pi * freq * tt)
+                                + .22 * np.sin(2 * np.pi * freq * 2.71 * tt))
+    save('powerup', reverb(fade(surge, .009, .5), .42), .75, smooth_edges=True)
+
+    t = np.arange(int(SR * 4.7)) / SR
+    gate = .30 * noise(len(t), 28, 250) * (1 - np.exp(-t * 14)) * np.exp(-t * 2.6)
+    gate += .17 * noise(len(t), 340, 2000) * (1 - np.exp(-t * 8)) * np.exp(-t * 3.7)
+    for when, freq, level in [(.13, 65.41, .65), (.16, 130.81, .38),
+                              (.24, 196, .28), (.33, 261.63, .21),
+                              (.47, 311.13, .16)]:
+        tt = np.maximum(t - when, 0)
+        env = (t >= when) * (1 - np.exp(-tt * 18)) * np.exp(-tt * .94)
+        gate += level * np.sin(2 * np.pi * freq * tt) * env
+    for i, when in enumerate(np.linspace(.47, 2.35, 15)):
+        tt = np.maximum(t - when, 0)
+        freq = [783.99, 1046.5, 1244.5, 1568][i % 4]
+        env = (t >= when) * (1 - np.exp(-tt * 220)) * np.exp(-tt * 7.5)
+        gate += .068 * env * (np.sin(2 * np.pi * freq * tt)
+                              + .35 * np.sin(2 * np.pi * freq * 2.03 * tt))
+    save('gate_open', reverb(fade(gate, .012, .85), .55), .77, smooth_edges=True)
+    RNG = original_rng
+
+
 if __name__ == '__main__':
     music()
     effects()
+    empowered_effects()
     stats_file = ROOT / 'Tools' / 'audio-stats.json'
     stats_file.write_text(json.dumps(STATS, indent=2) + '\n')
     print(json.dumps(STATS, indent=2))
