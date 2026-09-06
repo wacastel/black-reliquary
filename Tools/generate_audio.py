@@ -1,5 +1,6 @@
 """Original procedural audio for Black Reliquary. No samples or third-party assets."""
 from pathlib import Path
+import argparse
 import json
 import wave
 import numpy as np
@@ -10,9 +11,15 @@ OUT.mkdir(parents=True, exist_ok=True)
 SR = 22050
 RNG = np.random.default_rng(91743)
 STATS = {}
+WANTED = None
+BASE_EFFECTS = {'shotgun', 'rocket', 'explosion', 'hurt', 'enemy', 'pickup', 'seal', 'win', 'player_jump'}
+EMPOWERED_EFFECTS = {'empowered_shot', 'empowered_rocket', 'gore_burst', 'monster_leap',
+                     'monster_roar', 'monster_land', 'powerup', 'gate_open'}
 
 
 def save(name, signal, peak=0.8, smooth_edges=False):
+    if WANTED is not None and name not in WANTED:
+        return
     signal = np.asarray(signal, dtype=np.float64)
     signal -= signal.mean(axis=0)
     if smooth_edges:
@@ -123,17 +130,44 @@ def music():
 
 
 def effects():
-    t = np.arange(int(SR * .57)) / SR
-    punch = np.sin(2 * np.pi * (105 * t - 42 * t * t)) * np.exp(-t * 19)
-    blast = noise(len(t), 95, 7400) * np.exp(-t * 24)
-    body = noise(len(t), 30, 620) * np.exp(-t * 11)
-    shotgun = fade(.8 * punch + .58 * blast + .21 * body, .001, .06)
-    save('shotgun', reverb(shotgun, .23), .90)
+    global RNG
+    original_rng = RNG
+    # Retain the original stream for unchanged effects. Advancing the four music
+    # noise buffers reproduces its state without synthesizing the 72-second bed.
+    RNG = np.random.default_rng(91743)
+    for _ in range(4):
+        RNG.normal(size=SR * 72)
+    legacy_rng = RNG
+    # Revised sounds have their own streams: --only and full builds are identical.
+    RNG = np.random.default_rng(917438)
+    t = np.arange(int(SR * 1.14)) / SR
+    # A pressure wave, audible low-mid body, tearing muzzle blast, and pump cycle.
+    # Most of the weight lives above 140 Hz so small laptop speakers retain it.
+    punch = np.sin(2 * np.pi * (185 * t - 74 * t * t + 15 * t ** 3)) * np.exp(-t * 9)
+    body = noise(len(t), 145, 1050) * np.exp(-t * 6.7)
+    blast = noise(len(t), 550, 5700) * np.exp(-t * 18)
+    shotgun = np.tanh((.70 * punch + .59 * body + .40 * blast) * 1.7) * .68
+    shotgun += .10 * noise(len(t), 120, 780) * np.exp(-t * 3.2)
+    for when, amount, freq in [(.19, .16, 1350), (.31, .12, 920)]:
+        tt = np.maximum(t - when, 0)
+        env = (t >= when) * (1 - np.exp(-tt * 700)) * np.exp(-tt * 49)
+        shotgun += amount * env * (noise(len(t), 550, 3600) + .27 * np.sin(2 * np.pi * freq * tt))
+    save('shotgun', reverb(fade(shotgun, .0017, .19), .40), .88, smooth_edges=True)
 
-    t = np.arange(int(SR * .58)) / SR
-    launch = noise(len(t), 100, 4600) * np.exp(-t * 8)
-    thump = np.sin(2 * np.pi * (76 * t - 23 * t * t)) * np.exp(-t * 13)
-    save('rocket', reverb(fade(.55 * launch + .6 * thump, .001, .09)), .85)
+    t = np.arange(int(SR * 1.25)) / SR
+    pitch = 151 * t - 49 * t * t + 9 * t ** 3
+    launch = .61 * np.sin(2 * np.pi * pitch) * np.exp(-t * 7)
+    launch += .55 * noise(len(t), 155, 2400) * np.exp(-t * 5.8)
+    launch += .32 * noise(len(t), 650, 5300) * np.exp(-t * 25)
+    exhaust = (.7 + .3 * np.sin(2 * np.pi * 38 * t)) * (1 - np.exp(-t * 27)) * np.exp(-t * 4.4)
+    launch += .16 * noise(len(t), 330, 2900) * exhaust
+    tt = np.maximum(t - .27, 0)
+    launch += .13 * (t >= .27) * noise(len(t), 720, 3500) * (1 - np.exp(-tt * 600)) * np.exp(-tt * 45)
+    save('rocket', reverb(fade(np.tanh(launch * 1.55) * .7, .002, .23), .38), .85, smooth_edges=True)
+
+    RNG = legacy_rng
+    for length in [.57, .57, .58]:
+        RNG.normal(size=int(SR * length))  # Original shotgun and rocket noise draws.
 
     t = np.arange(int(SR * 1.5)) / SR
     boom = .64 * noise(len(t), 22, 330) * np.exp(-t * 3.3)
@@ -162,12 +196,26 @@ def effects():
         pickup += (t >= when) * np.sin(2 * np.pi * freq * tt) * (1 - np.exp(-tt * 220)) * np.exp(-tt * 12)
     save('pickup', reverb(fade(pickup, .003, .15), .2), .52)
 
-    t = np.arange(int(SR * 3.7)) / SR
-    seal = np.zeros(len(t))
-    for freq, level in [(98, 1), (196.3, .43), (268.5, .27), (409.1, .19), (551, .08)]:
-        seal += level * np.sin(2 * np.pi * freq * t) * np.exp(-t * 1.45)
-    seal += noise(len(t), 85, 950) * .17 * np.exp(-t * 6)
-    save('seal', reverb(fade(seal, .012, .6), .5), .74)
+    legacy_rng = RNG
+    RNG = np.random.default_rng(917439)
+    t = np.arange(int(SR * 4.8)) / SR
+    # A mallet strike excites an inharmonic bronze body, then rising silver chimes.
+    strike = .38 * noise(len(t), 320, 4100) * np.exp(-t * 43)
+    seal = strike + .24 * np.sin(2 * np.pi * (230 * t - 40 * t * t)) * np.exp(-t * 14)
+    for freq, level, decay in [(196, .64, 1.08), (392.8, .35, .83),
+                              (536, .25, 1.13), (814, .17, 1.34),
+                              (1063, .12, 1.65), (1487, .06, 2.05)]:
+        env = (1 - np.exp(-t * 95)) * np.exp(-t * decay)
+        beating = .86 + .14 * np.cos(2 * np.pi * 1.7 * t)
+        seal += level * np.sin(2 * np.pi * freq * t) * env * beating
+    for when, freq, level in [(.29, 587.33, .20), (.56, 783.99, .18),
+                              (.85, 1046.5, .145), (1.13, 1174.66, .10)]:
+        tt = np.maximum(t - when, 0)
+        env = (t >= when) * (1 - np.exp(-tt * 130)) * np.exp(-tt * 2)
+        seal += level * env * (np.sin(2 * np.pi * freq * tt) + .21 * np.sin(2 * np.pi * freq * 2.73 * tt))
+    save('seal', reverb(fade(seal, .003, .75), .65), .81, smooth_edges=True)
+    RNG = legacy_rng
+    RNG.normal(size=int(SR * 3.7))  # Original seal's noise draw.
 
     t = np.arange(int(SR * 6)) / SR
     win = np.zeros(len(t))
@@ -176,6 +224,25 @@ def effects():
         env = (t >= when) * (1 - np.exp(-tt * 4)) * np.exp(-tt * .75)
         win += env * (np.sin(2 * np.pi * freq * tt) + .18 * np.sin(2 * np.pi * freq * 2.005 * tt))
     save('win', reverb(fade(win, .08, 1.6), .35), .65)
+
+    RNG = np.random.default_rng(917440)
+    t = np.arange(int(SR * .43)) / SR
+    # Original source-filter vocal synthesis: an airy /h/ enters a short voiced
+    # open-back vowel. No recorded person, speech service, or borrowed sample.
+    pitch = 136 + 28 * np.exp(-((t - .08) / .045) ** 2) - 41 * t
+    phase = 2 * np.pi * np.cumsum(pitch) / SR
+    voiced = np.zeros(len(t))
+    for harmonic in range(1, 24):
+        freq = harmonic * 140
+        formant = (.85 * np.exp(-.5 * ((freq - 640) / 165) ** 2)
+                   + .37 * np.exp(-.5 * ((freq - 1110) / 200) ** 2)
+                   + .13 * np.exp(-.5 * ((freq - 2450) / 390) ** 2))
+        voiced += np.sin(harmonic * phase + .13 * harmonic) * (formant + .20) / harmonic ** .76
+    voicing_env = (1 - np.exp(-np.maximum(t - .024, 0) * 70)) * np.exp(-t * 9.2)
+    breath_env = (1 - np.exp(-t * 150)) * np.exp(-t * 19)
+    huh = .83 * voiced * voicing_env + .18 * noise(len(t), 500, 3500) * breath_env
+    save('player_jump', reverb(fade(huh, .008, .13), .07)[:int(SR * .68)], .62, smooth_edges=True)
+    RNG = original_rng
 
 
 def empowered_effects():
@@ -205,20 +272,29 @@ def empowered_effects():
     launch += .18 * noise(len(t), 24, 250) * np.exp(-t * 3.5)
     save('empowered_rocket', reverb(fade(np.tanh(launch * 1.4), .002, .20), .35), .86, smooth_edges=True)
 
-    t = np.arange(int(SR * .9)) / SR
-    # Deep fleshy impact under brittle bone cracks and descending liquid pops.
-    burst = .58 * noise(len(t), 75, 1300) * np.exp(-t * 15)
-    burst += .48 * np.sin(2 * np.pi * (137 * t - 63 * t * t)) * np.exp(-t * 19)
-    burst += .23 * noise(len(t), 1500, 7900) * np.exp(-t * 43)
-    for when, level, pitch in [(0.022, .38, 320), (.071, .27, 460),
-                               (.124, .29, 270), (.205, .17, 380),
-                               (.312, .12, 240), (.437, .075, 300)]:
+    legacy_rng = RNG
+    RNG = np.random.default_rng(914727)
+    t = np.arange(int(SR * 2.0)) / SR
+    # A substantial body burst, staggered bone snaps and airborne wet debris.
+    burst = .55 * noise(len(t), 130, 1450) * np.exp(-t * 7.5)
+    burst += .49 * np.sin(2 * np.pi * (192 * t - 64 * t * t + 9 * t ** 3)) * np.exp(-t * 9)
+    burst += .29 * noise(len(t), 1300, 6700) * np.exp(-t * 23)
+    burst = .74 * np.tanh(burst * 1.55)
+    for when, level, pitch in [(0.031, .48, 340), (.098, .41, 490),
+                               (.175, .38, 280), (.29, .34, 390),
+                               (.43, .28, 230), (.59, .23, 350),
+                               (.79, .19, 260), (1.02, .14, 310),
+                               (1.28, .11, 230), (1.54, .075, 360)]:
         tt = np.maximum(t - when, 0)
-        env = (t >= when) * (1 - np.exp(-tt * 2400)) * np.exp(-tt * 70)
-        liquid_phase = 2 * np.pi * (pitch * tt - pitch * 5 * tt * tt)
-        pop = .6 * np.sin(liquid_phase) + .33 * noise(len(t), 900, 6000)
+        env = (t >= when) * (1 - np.exp(-tt * 1100)) * np.exp(-tt * 26)
+        liquid_phase = 2 * np.pi * (pitch * tt - pitch * 2 * tt * tt)
+        pop = .65 * np.sin(liquid_phase) + .40 * noise(len(t), 680, 5600)
         burst += level * pop * env
-    save('gore_burst', reverb(fade(burst, .0015, .15), .15), .83, smooth_edges=True)
+    burst += .065 * noise(len(t), 260, 1900) * (1 - np.exp(-t * 30)) * np.exp(-t * 2.4)
+    save('gore_burst', reverb(fade(burst, .0018, .3), .31), .86, smooth_edges=True)
+    RNG = legacy_rng
+    for _ in range(8):
+        RNG.normal(size=int(SR * .9))  # Preserve unchanged creature and gate sounds.
 
     def creature(t, pitch, breath):
         phase = 2 * np.pi * np.cumsum(pitch) / SR
@@ -283,9 +359,19 @@ def empowered_effects():
 
 
 if __name__ == '__main__':
-    music()
-    effects()
-    empowered_effects()
-    stats_file = ROOT / 'Tools' / 'audio-stats.json'
-    stats_file.write_text(json.dumps(STATS, indent=2) + '\n')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--only', nargs='+', choices=sorted(BASE_EFFECTS | EMPOWERED_EFFECTS | {'music'}),
+                        help='Regenerate only these WAVs; leave other assets and the default stats file untouched.')
+    parser.add_argument('--stats-output', type=Path, help='Optional JSON report destination, including for a selective build.')
+    args = parser.parse_args()
+    WANTED = set(args.only) if args.only else None
+    if WANTED is None or 'music' in WANTED:
+        music()
+    if WANTED is None or WANTED & BASE_EFFECTS:
+        effects()
+    if WANTED is None or WANTED & EMPOWERED_EFFECTS:
+        empowered_effects()
+    stats_file = args.stats_output or (ROOT / 'Tools' / 'audio-stats.json' if WANTED is None else None)
+    if stats_file is not None:
+        stats_file.write_text(json.dumps(STATS, indent=2) + '\n')
     print(json.dumps(STATS, indent=2))

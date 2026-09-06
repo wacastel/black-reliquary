@@ -91,9 +91,9 @@ extension Game {
     var weaponDamageMultiplier: Float { empowered ? 5 : 1 }
 
     func activatePowerup() {
-        powerupRemaining=25; shells+=8; rockets+=2
+        powerupRemaining=GameTuning.bloodfireDuration; shells+=8; rockets+=2
         makeWeapon(); audio.play("powerup"); trauma=max(trauma,0.18)
-        announce("BLOODFIRE · 5× DAMAGE FOR 25 SECONDS",for:4)
+        announce("BLOODFIRE · 5× DAMAGE FOR 30 SECONDS",for:4)
     }
 
     func updatePowerup(_ dt:Float) {
@@ -143,35 +143,67 @@ extension Game {
         let origin=enemyCenter(e)
         e.node.removeAllActions(); e.node.removeFromParentNode(); e.leapHeight=0; e.leapRemaining=0
         audio.play("gore_burst"); trauma=max(trauma,0.3*(1-min(1,simd_distance(position,origin)/22)))
-        // Bound debris even when a powered rocket tears through a crowded room.
-        while fragments.count>160-22 { fragments.removeFirst().node.removeFromParentNode() }
-        let flesh=simpleMaterial(color(0.34,0.017,0.012)); flesh.lightingModel = .blinn; flesh.shininess=0.4
-        let bone=simpleMaterial(color(0.57,0.48,0.29)); let iron=simpleMaterial(color(0.12,0.13,0.12))
+        // Bound both flying debris and the finite spray/flash/stain containers.
+        while fragments.count>192-32 { fragments.removeFirst().node.removeFromParentNode() }
+        let olderBursts=effectsRoot.childNodes.filter{$0.name=="gore-burst"}
+        for old in olderBursts.prefix(max(0,olderBursts.count-7)) {old.removeFromParentNode()}
+        let burst=SCNNode(); burst.name="gore-burst"; burst.categoryBitMask=4
+        burst.position=SCNVector3(origin); effectsRoot.addChildNode(burst)
+        burst.runAction(.sequence([.wait(duration:9.2),.removeFromParentNode()]))
+        let flesh=simpleMaterial(color(0.56,0.024,0.018),emission:color(0.095,0.006,0.003))
+        flesh.lightingModel = .blinn; flesh.shininess=0.45
+        let bone=simpleMaterial(color(0.79,0.65,0.42),emission:color(0.09,0.05,0.013))
+        let iron=simpleMaterial(color(0.29,0.26,0.20),emission:color(0.08,0.028,0.009))
         let push=simd_length(direction)>0.01 ? simd_normalize(direction):SIMD3<Float>(0,0,-1)
-        for i in 0..<22 {
-            let size=CGFloat.random(in:0.055...0.16)
+        for i in 0..<32 {
+            let size=CGFloat.random(in:0.075...0.22)
             let geo:SCNGeometry
             if i%4==0 { let g=SCNCylinder(radius:size*0.45,height:size*3.2); g.radialSegmentCount=5; geo=g }
-            else { geo=SCNBox(width:size*1.6,height:size,length:size*1.3,chamferRadius:0) }
-            geo.materials=[i%4==0 ? bone:(i%5==0 ? iron:flesh)]
-            let n=SCNNode(geometry:geo); n.categoryBitMask=4
-            let p=origin+SIMD3(Float.random(in:-0.28...0.28),Float.random(in:-0.45...0.4),Float.random(in:-0.28...0.28))
+            else if i%4==1 {geo=SCNBox(width:size*1.8,height:size*0.40,length:size*1.5,chamferRadius:0)}
+            else { geo=SCNBox(width:size*1.7,height:size,length:size*1.35,chamferRadius:0) }
+            geo.materials=[i%4==0 ? bone:(i%4==1 ? iron:flesh)]
+            let n=SCNNode(geometry:geo); n.categoryBitMask=4; n.name="gore-fragment"
+            var p=move(origin,by:SIMD3(Float.random(in:-0.42...0.42),0,Float.random(in:-0.42...0.42)),radius:0.08)
+            p.y += Float.random(in:-0.4...0.5)
             n.position=SCNVector3(p); effectsRoot.addChildNode(n)
-            let velocity=SIMD3<Float>(Float.random(in:-3.8...3.8),Float.random(in:2.0...6.2),Float.random(in:-3.8...3.8))+push*2.4
-            fragments.append(GoreFragment(node:n,position:p,velocity:velocity,spin:SIMD3(Float.random(in:-8...8),Float.random(in:-8...8),Float.random(in:-8...8)),life:Float.random(in:2.8...4.5)))
+            let angle=Float(i)*2 * .pi/32+Float.random(in:-0.16...0.16), speed=Float.random(in:3.5...6.5)
+            let velocity=SIMD3<Float>(cos(angle)*speed,Float.random(in:2.4...7.2),sin(angle)*speed)+push*2.8
+            fragments.append(GoreFragment(node:n,position:p,velocity:velocity,spin:SIMD3(Float.random(in:-10...10),Float.random(in:-10...10),Float.random(in:-10...10)),life:Float.random(in:3.1...4.5)))
         }
-        let blood=SCNParticleSystem(); blood.birthRate=2200; blood.emissionDuration=0.04; blood.loops=false
-        blood.particleLifeSpan=0.48; blood.particleLifeSpanVariation=0.2; blood.particleSize=0.085
-        blood.particleSizeVariation=0.05; blood.particleColor=color(0.48,0.025,0.009,0.9)
-        blood.spreadingAngle=180; blood.particleVelocity=4; blood.particleVelocityVariation=2
-        blood.acceleration=SCNVector3(0,-8,0); blood.blendMode = .alpha; blood.isLightingEnabled=false
-        let spray=SCNNode(); spray.position=SCNVector3(origin); spray.categoryBitMask=4; spray.addParticleSystem(blood)
-        effectsRoot.addChildNode(spray); spray.runAction(.sequence([.wait(duration:1),.removeFromParentNode()]))
-        spark(at:origin,c:color(1,0.24,0.035),count:18)
+        let blood=SCNParticleSystem(); blood.birthRate=3400; blood.emissionDuration=0.055; blood.loops=false
+        blood.emitterShape=SCNSphere(radius:0.24)
+        blood.particleLifeSpan=0.6; blood.particleLifeSpanVariation=0.18; blood.particleSize=0.105
+        blood.particleSizeVariation=0.065; blood.particleColor=color(0.76,0.025,0.012,0.82)
+        blood.spreadingAngle=180; blood.particleVelocity=5.8; blood.particleVelocityVariation=2.1
+        blood.acceleration=SCNVector3(0,-10,0); blood.blendMode = .alpha; blood.isLightingEnabled=false
+        let spray=SCNNode(); spray.categoryBitMask=4; spray.addParticleSystem(blood)
+        burst.addChildNode(spray); spray.runAction(.sequence([.wait(duration:1.1),.removeFromParentNode()]))
+        let embers=SCNParticleSystem(); embers.birthRate=1900; embers.emissionDuration=0.045; embers.loops=false
+        embers.particleLifeSpan=0.32; embers.particleLifeSpanVariation=0.16
+        embers.particleSize=0.055; embers.particleSizeVariation=0.028
+        embers.particleColor=color(1,0.54,0.10); embers.particleColorVariation=SCNVector4(0.045,0.12,0.10,0)
+        embers.spreadingAngle=180; embers.particleVelocity=7.5; embers.particleVelocityVariation=2.7
+        embers.acceleration=SCNVector3(0,-4,0); embers.blendMode = .additive; embers.isLightingEnabled=false
+        let sparks=SCNNode(); sparks.categoryBitMask=4; sparks.addParticleSystem(embers)
+        burst.addChildNode(sparks); sparks.runAction(.sequence([.wait(duration:0.75),.removeFromParentNode()]))
+        // An open expanding ring gives the blast size while keeping the target visible.
+        let glow=simpleMaterial(color(1,0.19,0.035,0.75),emission:color(1,0.12,0.02))
+        glow.lightingModel = .constant; glow.blendMode = .add; glow.writesToDepthBuffer=false
+        let wave=SCNTorus(ringRadius:0.30,pipeRadius:0.015)
+        wave.ringSegmentCount=40; wave.pipeSegmentCount=4; wave.materials=[glow]
+        let shock=SCNNode(geometry:wave); shock.categoryBitMask=4
+        let toViewer=position-origin
+        if simd_length(toViewer)>0.01 {shock.simdOrientation=simd_quatf(from:SIMD3<Float>(0,1,0),to:simd_normalize(toViewer))}
+        burst.addChildNode(shock)
+        shock.runAction(.sequence([.group([.scale(to:9.5,duration:0.34),.fadeOut(duration:0.34)]),.removeFromParentNode()]))
+        let flashGeometry=SCNSphere(radius:0.26); flashGeometry.segmentCount=10; flashGeometry.materials=[glow]
+        let flash=SCNNode(geometry:flashGeometry); flash.categoryBitMask=4; burst.addChildNode(flash)
+        flash.runAction(.sequence([.group([.scale(to:2.0,duration:0.11),.fadeOut(duration:0.11)]),.removeFromParentNode()]))
         // A short-lived stain gives the impact weight without accumulating geometry.
-        let stain=SCNCylinder(radius:0.62,height:0.009); stain.radialSegmentCount=12; stain.materials=[flesh]
-        let pool=SCNNode(geometry:stain); pool.position=v3(origin.x,0.018,origin.z); pool.scale=SCNVector3(1,1,0.64)
-        pool.categoryBitMask=4; effectsRoot.addChildNode(pool)
+        let stain=SCNCylinder(radius:0.92,height:0.009); stain.radialSegmentCount=12
+        stain.materials=[simpleMaterial(color(0.30,0.011,0.008))]
+        let pool=SCNNode(geometry:stain); pool.position=v3(0,0.018-origin.y,0); pool.scale=SCNVector3(1,1,0.70)
+        pool.categoryBitMask=4; burst.addChildNode(pool)
         pool.runAction(.sequence([.wait(duration:7),.fadeOut(duration:2),.removeFromParentNode()]))
     }
 
@@ -180,11 +212,11 @@ extension Game {
             var f=fragments[i]; f.life-=dt
             if f.life<=0 { f.node.removeFromParentNode(); fragments.remove(at:i); continue }
             f.velocity.y-=dt*12
-            var next=move(f.position,by:f.velocity*dt,radius:0.04)
+            var next=move(f.position,by:f.velocity*dt,radius:0.08)
             if abs(next.x-f.position.x)<0.001 { f.velocity.x *= -0.32 }
             if abs(next.z-f.position.z)<0.001 { f.velocity.z *= -0.32 }
-            next.y=max(0.06,f.position.y+f.velocity.y*dt)
-            if next.y<=0.06 { f.velocity.y=abs(f.velocity.y)*0.26; f.velocity.x *= 0.85; f.velocity.z *= 0.85 }
+            next.y=max(0.08,f.position.y+f.velocity.y*dt)
+            if next.y<=0.08 { f.velocity.y=abs(f.velocity.y)*0.26; f.velocity.x *= 0.85; f.velocity.z *= 0.85 }
             f.position=next; f.node.position=SCNVector3(next)
             f.node.eulerAngles=SCNVector3(f.node.eulerAngles.f+f.spin*dt)
             f.node.opacity=CGFloat(min(1,f.life)); fragments[i]=f

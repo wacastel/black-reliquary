@@ -2,6 +2,8 @@
 
 **Chapter 01 — The Hollow Cathedral**
 
+**Current version: v0.3.0.**
+
 An original gothic first-person shooter prototype for Apple Silicon Macs. Fight through a weathered cathedral with dark stone, rust, and ominous light: recover three seals, defeat their guardians, and escape through the northern gate. The compact level is designed for roughly five minutes of first-time play.
 
 ## Play
@@ -18,10 +20,11 @@ The app uses a local ad-hoc signature and has not been notarized for public dist
 
 | Input | Action |
 |---|---|
-| W / A / S / D | Move forward / left / backward / right |
+| W / A / S / D | Walk forward / left / backward / right |
 | Trackpad movement or mouse movement | Aim |
-| Space or primary mouse click (hold for repeated fire) | Fire |
-| Shift or secondary mouse click | Jump |
+| Primary mouse or trackpad click | Fire; hold for repeated fire |
+| Space | Jump once per press; release before jumping again |
+| Hold Shift + W / A / S / D | Run |
 | 1 | Iron shotgun |
 | 2 | Rocket lance |
 | F | Toggle native fullscreen |
@@ -32,7 +35,7 @@ The app uses a local ad-hoc signature and has not been notarized for public dist
 | Enter, after death or victory | Restart |
 | Command-Q | Quit |
 
-**Trackpad tip:** Use one finger to aim, your other hand for WASD, and Space to fire. You do not need to click while dragging. The pointer is captured only during play and restored on pause, focus loss, or quit. Standard macOS Control-Command-F also toggles fullscreen.
+**Trackpad tip:** Move one finger to aim and use a primary trackpad click to fire; hold the click for repeated shots while aiming. Your other hand handles WASD, Shift to run, and Space to jump. The pointer is captured only during play and restored on pause, focus loss, or quit. Standard macOS Control-Command-F also toggles fullscreen.
 
 ## Your objective
 
@@ -40,13 +43,14 @@ Follow the central aisle to the crossing. The west ossuary, east furnace chapel,
 
 Red reliquaries restore vitality; ammunition boxes replenish shells or rockets. Each seal restores some vitality. The level has 26 enemies, two weapons, health and ammunition pickups, a death/restart loop, and a victory screen.
 
-## Bloodfire update — v0.2
+## Bloodfire and combat refinements — v0.3.0
 
+- **Revised movement controls:** Space jumps once per press, holding Shift while moving runs, and primary click fires. Jumps have an original, breathy player “huh!” sound.
 - **Darker gothic atmosphere:** weathered masonry, grime, rust, and darker lighting deepen the cathedral's mood.
-- **Bloodfire relics:** find three weapon powerups, with the first available early in the nave. Each grants **25 seconds of fivefold damage** for both weapons, plus **8 shells and 2 rockets**. Switching weapons preserves the effect. Another relic refreshes the timer to 25 seconds; durations do not stack. Pausing freezes the timer, and restarting clears it.
-- **Explosive combat:** empowered weapons have heavier, thunderous reports, and their kills blast enemies into blood, bone, and armor with a visceral impact sound. Empowered rocket splash deals at least 140 damage even at its outer edge. Rockets still hurt you at close range; Bloodfire does not increase that self-damage.
+- **Bloodfire relics:** find three weapon powerups, with the first available early in the nave. Each grants **30 seconds of fivefold damage** for both weapons, plus **8 shells and 2 rockets**. Switching weapons preserves the effect. Another relic refreshes the timer to 30 seconds; durations do not stack. Pausing freezes the timer, and restarting clears it.
+- **Explosive combat:** both default weapons have fuller firing sounds, while empowered weapons have heavier, thunderous reports. Empowered kills blast enemies into blood, bone, and armor in larger, more vibrant bursts with a longer visceral explosion sound. Empowered rocket splash deals at least 140 damage even at its outer edge. Rockets still hurt you at close range; Bloodfire does not increase that self-damage.
 - **Livelier monsters:** existing enemies move faster with articulated limbs and glowing bodies. Four new Ossuary monsters leap toward you with snarls, roars, and heavy landing impacts.
-- **A clear escape signal:** the gate remains locked until all three guarded seals are collected, then glows emerald, sparkles, and sounds a mystical chime.
+- **Stronger seal feedback:** collecting a seal sounds a bigger, more dynamic mystical chime. The gate remains locked until all three guarded seals are collected, then glows emerald, sparkles, and sounds its opening chime.
 
 All architecture, rune designs, and sound assets are original. The soundtrack is a looping 72-second ambient composition with drones, breath textures, metallic tolls, and distant choir-like tones.
 

@@ -9,7 +9,7 @@
   "movementWorks": true,
   "nativeView": true,
   "pickupSpawnsValid": true,
-  "renderFPSObserved": 60.03145937333326,
+  "renderFPSObserved": 60.02478973583499,
   "shootConsumesAmmo": true,
   "shortProjectileHitsWall": true,
   "simulationTicksPerSecond": 60,

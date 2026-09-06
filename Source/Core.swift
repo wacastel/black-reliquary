@@ -2,6 +2,12 @@ import AppKit
 import SceneKit
 import simd
 
+enum GameTuning {
+    static let walkSpeed: Float = 5.7
+    static let runSpeed: Float = 8.8
+    static let bloodfireDuration: Float = 30
+}
+
 struct WalkRect {
     var x: Float; var z: Float; var width: Float; var depth: Float
     func contains(_ x: Float, _ z: Float, margin: Float = 0) -> Bool {

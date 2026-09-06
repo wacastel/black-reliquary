@@ -124,9 +124,9 @@ final class HUDView: NSView {
     }
 
     private func drawControls(x: CGFloat, y: CGFloat, width: CGFloat, scale s: CGFloat) {
-        type("WASD  Move       TRACKPAD  Aim       SPACE / CLICK  Fire", x: x, y: y + 22 * s,
+        type("WASD  Walk       SHIFT  Run       TRACKPAD  Aim       CLICK  Fire", x: x, y: y + 22 * s,
              width: width, size: 11 * s, color: ivory.withAlphaComponent(0.72), tracking: 0.3 * s)
-        type("SHIFT  Jump       1 / 2  Weapons       F  Fullscreen       ESC  Pause", x: x, y: y,
+        type("SPACE  Jump       1 / 2  Weapons       F  Fullscreen       ESC  Pause", x: x, y: y,
              width: width, size: 11 * s, color: muted, tracking: 0.3 * s)
     }
 
@@ -184,7 +184,7 @@ final class HUDView: NSView {
             NSColor(calibratedRed:0.065,green:0.012,blue:0.006,alpha:0.9).setFill(); box.fill()
             type(String(format:"BLOODFIRE   5× DAMAGE   %02ds",Int(ceil(state.powerupRemaining))),x:box.minX,y:box.minY+12*s,width:box.width,size:11*s,color:fire,tracking:1*s,align:.center)
             fire.withAlphaComponent(0.22).setFill(); NSRect(x:box.minX,y:box.minY,width:box.width,height:3*s).fill()
-            fire.setFill(); NSRect(x:box.minX,y:box.minY,width:box.width*CGFloat(min(1,state.powerupRemaining/25)),height:3*s).fill()
+            fire.setFill(); NSRect(x:box.minX,y:box.minY,width:box.width*CGFloat(min(1,state.powerupRemaining/Double(GameTuning.bloodfireDuration))),height:3*s).fill()
         }
 
         type(state.weapon == 0 ? "01   /   IRON SHOTGUN" : "02   /   ROCKET LANCE",

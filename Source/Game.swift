@@ -31,6 +31,7 @@ final class Game {
     var enemies=[Foe](); var missiles=[Missile](); var loot=[Loot](); var seals=[Seal](); var exitNode=SCNNode()
     let effectsRoot=SCNNode(); var fragments=[GoreFragment](); var gate:ExitGate!
     var powerupRemaining:Float=0; var trauma:Float=0; var enhancementTest=false
+    var jumpRequested=false
     var muted=false; var ticks=0; var fps=60; var fpsClock:Double=0; var screenshotTaken=false
     var testMode=false; var autoPlay=false; var testResults=[String:Any](); var lastZone=""; var metricsWritten=false
     var musicStarted=false
@@ -65,7 +66,7 @@ final class Game {
         world=buildWorld(); scene.rootNode.addChildNode(world.root); position=world.spawn.f; yaw=0; pitch=0
         health=100; shells=42; rockets=10; weapon=0; kills=0; elapsed=0; height=0; jumpVelocity=0; cooldown=0; recoil=0
         damageFlash=0; hitFlash=0; messageTime=0; keys.removeAll(); mouseHeld=false; enemies=[]; loot=[]; seals=[]; missiles=[]
-        effectsRoot.childNodes.forEach{$0.removeFromParentNode()}; fragments=[]; powerupRemaining=0; trauma=0
+        effectsRoot.childNodes.forEach{$0.removeFromParentNode()}; fragments=[]; powerupRemaining=0; trauma=0; jumpRequested=false
         autoIndex=0; autoRoute=[]; autoNext=0; autoClock=0; lastZone=""
         for spawn in world.enemies { let foe=Foe(spawn:spawn); enemies.append(foe); scene.rootNode.addChildNode(foe.node) }
         for p in world.pickups {
@@ -120,7 +121,7 @@ final class Game {
     var forward:SIMD3<Float>{SIMD3(-sin(yaw)*cos(pitch),sin(pitch),-cos(yaw)*cos(pitch))}
     var sealCount:Int {seals.filter{$0.collected}.count}
     func begin(capture:Bool=true) {setMode("playing");if capture {view.captureMouse()};if !musicStarted {audio.startMusic();musicStarted=true};announce("FIND THE THREE SEALS",for:4)}
-    func setMode(_ value:String) {mode=value;keys.removeAll();mouseHeld=false;audio.setPaused(value != "playing");if value != "playing" {view.releaseMouse()};weaponRoot.isHidden=value=="menu";refreshHUD()}
+    func setMode(_ value:String) {mode=value;keys.removeAll();mouseHeld=false;jumpRequested=false;audio.setPaused(value != "playing");if value != "playing" {view.releaseMouse()};weaponRoot.isHidden=value=="menu";refreshHUD()}
     func pause(){if mode=="playing" {setMode("paused")} else if mode=="paused" {begin()}}
     func announce(_ text:String,for duration:Float=3){message=text;messageTime=duration}
     func keyDown(_ e:NSEvent) {
@@ -130,14 +131,15 @@ final class Game {
         if code==3 && !e.isARepeat {view.releaseMouse();view.window?.toggleFullScreen(nil);return}
         if code==46 && !e.isARepeat {muted.toggle();audio.setMuted(muted);announce(muted ? "SOUND MUTED":"SOUND ENABLED");return}
         if code==33 || code==30 {sensitivity=max(0.25,min(2.5,sensitivity+(code==30 ? 0.1 : -0.1)));announce(String(format:"LOOK SENSITIVITY %.1f",sensitivity));return}
-        if mode=="menu" && (code==36 || code==49) {begin();return}
+        if mode=="menu" && code==36 {begin();return}
         if (mode=="dead" || mode=="won") && code==36 {reset();begin();return}
         if mode=="paused" {if code==36 {begin()} else if code==15 {reset();begin()};return}
         if mode != "playing" {return}
         if code==18 {weapon=0;makeWeapon()} else if code==19 {weapon=1;makeWeapon()}
+        if code==49 && !e.isARepeat && !keys.contains(49) {jumpRequested=true}
         keys.insert(code)
     }
-    func click(){if mode=="menu" {begin()} else if mode=="paused" {begin()} else if mode=="playing" {if !view.mouseCaptured {view.captureMouse()};mouseHeld=true} else {reset();begin()}}
+    func click(){if mode=="menu" {begin()} else if mode=="paused" {begin()} else if mode=="playing" {if !view.mouseCaptured {view.captureMouse()};mouseHeld=true;shoot()} else {reset();begin()}}
     func look(_ dx:CGFloat,_ dy:CGFloat) {guard mode=="playing",view.mouseCaptured else{return};yaw -= Float(dx)*0.0025*sensitivity;pitch=max(-1.3,min(1.3,pitch-Float(dy)*0.0025*sensitivity))}
     func allowed(_ p:SIMD3<Float>,radius:Float=0.32)->Bool {
         for i in 0..<8 {let a=Float(i) * .pi/4;let x=p.x+cos(a)*radius;let z=p.z+sin(a)*radius
@@ -244,14 +246,7 @@ final class Game {
         if mode=="playing" {
             updatePowerup(dt); trauma=max(0,trauma-dt*1.8); updateFragments(dt)
             elapsed += Double(dt);cooldown=max(0,cooldown-dt);recoil=max(0,recoil-dt*6);damageFlash=max(0,damageFlash-dt);hitFlash=max(0,hitFlash-dt);messageTime=max(0,messageTime-dt)
-            if !autoPlay {
-                let x:Float=(keys.contains(2) ? 1:0)-(keys.contains(0) ? 1:0);let z:Float=(keys.contains(13) ? 1:0)-(keys.contains(1) ? 1:0)
-                if x != 0 || z != 0 {let dir=simd_normalize(SIMD3(cos(yaw)*x-sin(yaw)*z,0,-sin(yaw)*x-cos(yaw)*z));position=move(position,by:dir*5.7*dt);bob += dt*10}
-                else {bob += dt*1.4}
-                if keys.contains(56) && height<=0.001 {jumpVelocity=5.0}
-                jumpVelocity -= dt*15;height=max(0,height+jumpVelocity*dt);if height==0 {jumpVelocity=0};position.y=1.65+height
-                if mouseHeld || keys.contains(49) {shoot()}
-            }
+            if !autoPlay {updatePlayerInput(dt)}
             updateEnemies(dt);if mode=="playing" {updateMissiles(dt)};if mode=="playing" {updatePickups(dt)}
             if autoPlay {runAutoplay(dt)}
             let zone=world.zones.first(where:{$0.rect.contains(position.x,position.z)})?.name ?? "The Passage"
@@ -276,6 +271,26 @@ final class Game {
         camera.eulerAngles=SCNVector3(CGFloat(pitch),0,CGFloat(sin(Float(elapsed)*47)*shake*0.018))
         weaponRoot.position=SCNVector3(0.21+CGFloat(sin(bob))*0.007,-0.26+CGFloat(abs(cos(bob)))*0.009-CGFloat(recoil)*0.045,-0.52+CGFloat(recoil)*0.13)
         weaponRoot.eulerAngles.x=CGFloat(recoil)*0.11
+    }
+    func updatePlayerInput(_ dt:Float) {
+        guard mode=="playing" else {return}
+        let x:Float=(keys.contains(2) ? 1:0)-(keys.contains(0) ? 1:0)
+        let z:Float=(keys.contains(13) ? 1:0)-(keys.contains(1) ? 1:0)
+        if x != 0 || z != 0 {
+            let dir=simd_normalize(SIMD3(cos(yaw)*x-sin(yaw)*z,0,-sin(yaw)*x-cos(yaw)*z))
+            let running=keys.contains(56)
+            position=move(position,by:dir*(running ? GameTuning.runSpeed:GameTuning.walkSpeed)*dt)
+            bob+=dt*(running ? 14:10)
+        } else {bob+=dt*1.4}
+        // Consume the press even when airborne: holding Space never repeats a jump.
+        if jumpRequested {jumpRequested=false;_ = jump()}
+        jumpVelocity-=dt*15; height=max(0,height+jumpVelocity*dt)
+        if height==0 {jumpVelocity=0};position.y=1.65+height
+        if mouseHeld {shoot()}
+    }
+    @discardableResult func jump() -> Bool {
+        guard mode=="playing",height<=0.001,jumpVelocity<=0 else {return false}
+        jumpVelocity=5;audio.play("player_jump");return true
     }
     func updateEnemies(_ dt:Float) {
         let litFoes=Set(enemies.filter{$0.health>0 && simd_distance($0.position,position)<12}.sorted{simd_distance($0.position,position)<simd_distance($1.position,position)}.prefix(4).map{ObjectIdentifier($0)})

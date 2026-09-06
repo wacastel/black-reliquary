@@ -12,14 +12,14 @@ final class GameView: SCNView {
         tracking=NSTrackingArea(rect:bounds,options:[.activeInKeyWindow,.mouseMoved,.inVisibleRect],owner:self,userInfo:nil);addTrackingArea(tracking!)
     }
     func captureMouse(){guard !mouseCaptured,window?.isKeyWindow==true else{return};window?.makeFirstResponder(self);mouseCaptured=true;NSCursor.hide();CGAssociateMouseAndMouseCursorPosition(0)}
-    func releaseMouse(){guard mouseCaptured else{return};mouseCaptured=false;CGAssociateMouseAndMouseCursorPosition(1);NSCursor.unhide();game?.keys.removeAll();game?.mouseHeld=false}
+    func releaseMouse(){game?.keys.removeAll();game?.mouseHeld=false;game?.jumpRequested=false;guard mouseCaptured else{return};mouseCaptured=false;CGAssociateMouseAndMouseCursorPosition(1);NSCursor.unhide()}
     override func keyDown(with event:NSEvent){game?.keyDown(event)}
     override func keyUp(with event:NSEvent){game?.keys.remove(event.keyCode)}
-    override func flagsChanged(with event:NSEvent){if event.modifierFlags.contains(.shift){game?.keys.insert(56)}else{game?.keys.remove(56)}}
+    override func flagsChanged(with event:NSEvent){if game?.mode=="playing" && event.modifierFlags.contains(.shift){game?.keys.insert(56)}else{game?.keys.remove(56)}}
     override func mouseDown(with event:NSEvent){game?.click()}
     override func mouseUp(with event:NSEvent){game?.mouseHeld=false}
-    override func rightMouseDown(with event:NSEvent){if game?.mode=="playing" {game?.keys.insert(56)}}
-    override func rightMouseUp(with event:NSEvent){game?.keys.remove(56)}
+    override func rightMouseDown(with event:NSEvent){}
+    override func rightMouseUp(with event:NSEvent){}
     override func mouseMoved(with event:NSEvent){game?.look(event.deltaX,event.deltaY)}
     override func mouseDragged(with event:NSEvent){game?.look(event.deltaX,event.deltaY)}
     override func rightMouseDragged(with event:NSEvent){game?.look(event.deltaX,event.deltaY)}
@@ -47,7 +47,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate,NSWindowDelegate {
         game=Game(view:view,hud:hud)
         if CommandLine.arguments.contains("--fullscreen") {window.toggleFullScreen(nil)}
     }
-    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Black Reliquary",.applicationVersion:"0.2 — Bloodfire",.credits:NSAttributedString(string:"An original gothic FPS prototype.\nNative Apple Silicon • Swift • Metal\nOriginal procedural architecture and audio.")])}
+    @objc func about(){NSApp.orderFrontStandardAboutPanel(options:[.applicationName:"Black Reliquary",.applicationVersion:"0.3 — Bloodfire",.credits:NSAttributedString(string:"An original gothic FPS prototype.\nNative Apple Silicon • Swift • Metal\nOriginal procedural architecture and audio.")])}
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool{true}
     func applicationWillTerminate(_ notification:Notification){view?.releaseMouse();game?.audio.stop();game?.timer?.invalidate()}
     func windowDidResignKey(_ notification:Notification){view?.releaseMouse();if game?.mode=="playing" && game?.testMode==false && game?.autoPlay==false {game?.setMode("paused")}}

@@ -1,0 +1,119 @@
+{
+  "version": "0.3.0",
+  "scope": "Five refined audio assets and audio generator/playback changes",
+  "audible_audition_performed": false,
+  "limitations": [
+    "Physical MacBook-speaker sound and perceived realism require human playtesting.",
+    "This report does not claim runtime verification of music ducking or pause/mute behavior; Audio.swift passed isolated Swift typechecking."
+  ],
+  "sounds": {
+    "shotgun": {
+      "duration_seconds": 1.93995,
+      "encoding": "signed little-endian PCM",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_bits": 16,
+      "peak": 0.880001,
+      "rms": 0.125059,
+      "first_250_ms_rms": 0.332958,
+      "energy_fraction_150_to_1200_hz": 0.907141,
+      "clipped_sample_count": 0,
+      "unclipped": true,
+      "first_sample": 0,
+      "last_sample": 0,
+      "silent_endpoints": true,
+      "sha256": "f14a49b418d12a84c7b11073b21b3f34488368cfbb23ad8c0544b0d7a920d7ec"
+    },
+    "rocket": {
+      "duration_seconds": 2.04998,
+      "encoding": "signed little-endian PCM",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_bits": 16,
+      "peak": 0.850002,
+      "rms": 0.129349,
+      "first_250_ms_rms": 0.350178,
+      "energy_fraction_150_to_1200_hz": 0.426023,
+      "clipped_sample_count": 0,
+      "unclipped": true,
+      "first_sample": 0,
+      "last_sample": 0,
+      "silent_endpoints": true,
+      "sha256": "e93025fad4a4d0dd3ade3b45e32e10031d4d96ca2500b90aabb544257d004103"
+    },
+    "gore_burst": {
+      "duration_seconds": 2.8,
+      "encoding": "signed little-endian PCM",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_bits": 16,
+      "peak": 0.860012,
+      "rms": 0.083461,
+      "first_250_ms_rms": 0.260455,
+      "energy_fraction_150_to_1200_hz": 0.807851,
+      "clipped_sample_count": 0,
+      "unclipped": true,
+      "first_sample": 0,
+      "last_sample": 0,
+      "silent_endpoints": true,
+      "sha256": "c4ac894fc6cf933ecf725c3ae13a46813b99954c2468979d7e26f344f3ce210b"
+    },
+    "seal": {
+      "duration_seconds": 5.6,
+      "encoding": "signed little-endian PCM",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_bits": 16,
+      "peak": 0.809992,
+      "rms": 0.117809,
+      "first_250_ms_rms": 0.321883,
+      "energy_fraction_150_to_1200_hz": 0.991544,
+      "clipped_sample_count": 0,
+      "unclipped": true,
+      "first_sample": 0,
+      "last_sample": 0,
+      "silent_endpoints": true,
+      "sha256": "72b07c31b7d7f8f23d027b5009c83fb9d2be67af3322732c3fc7b1d5732b6d1c"
+    },
+    "player_jump": {
+      "duration_seconds": 0.68,
+      "encoding": "signed little-endian PCM",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_bits": 16,
+      "peak": 0.620014,
+      "rms": 0.068302,
+      "first_250_ms_rms": 0.111641,
+      "energy_fraction_150_to_1200_hz": 0.824162,
+      "clipped_sample_count": 0,
+      "unclipped": true,
+      "first_sample": 0,
+      "last_sample": 0,
+      "silent_endpoints": true,
+      "sha256": "528918fbaff2cb223f438c9481b11abc90a3ce52aa3bbbb9979e1cfa26544f9b"
+    }
+  },
+  "verification": {
+    "existing_pcm_read_only_reinspection": "passed",
+    "python_generator_ast_parse": "passed",
+    "swift_5_audio_typecheck": {
+      "result": "passed",
+      "command": "swiftc -swift-version 5 -typecheck Source/Audio.swift"
+    },
+    "selected_regeneration": {
+      "result": "passed",
+      "method": "SHA-256 before and after a second selective generator run; identical files for all five selected names.",
+      "command": "python3 -B Tools/generate_audio.py --only shotgun rocket gore_burst seal player_jump"
+    },
+    "full_generation": {
+      "result": "passed",
+      "asset_count": 18,
+      "method": "Imported generator with save replaced by an in-memory PCM16 WAV encoder, called music(), effects(), and empowered_effects(), then compared SHA-256 hashes to every current Resources WAV. All 18 matched byte-for-byte; no WAVs written during the full-generation check.",
+      "preserved_unchanged_assets": true
+    },
+    "anti_click_check": "All five first/last samples equal zero after decoded PCM inspection.",
+    "headroom_check": "All five normalized sample peaks are below 0.90; zero samples reach PCM16 extrema.",
+    "speaker_body_check": "All five signals have >24% of total spectral energy between 150 and 1200 Hz.",
+    "report_generation": "Read existing WAVs only; did not regenerate or modify source/audio."
+  }
+}
